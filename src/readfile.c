@@ -1285,8 +1285,13 @@ PIXCMAP  *cmap;
 l_ok
 ioFormatTest(const char  *filename)
 {
-l_int32    w, h, d, depth, equal, problems;
+l_int32    w, h, d, equal, problems;
+#if HAVE_LIBJPEG || HAVE_LIBWEBP || HAVE_LIBJP2K
+l_int32    depth;
+#endif
+#if HAVE_LIBJPEG || HAVE_LIBTIFF || HAVE_LIBWEBP || HAVE_LIBJP2K
 l_float32  diff;
+#endif
 BOX       *box;
 PIX       *pixs, *pixc, *pix1, *pix2;
 PIXCMAP   *cmap;

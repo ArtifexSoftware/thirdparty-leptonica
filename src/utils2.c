@@ -2294,11 +2294,13 @@ l_uint32  attributes;
 l_int32
 lept_rmdir(const char  *subdir)
 {
-char    *dir, *realdir, *fname, *fullname;
+char    *dir, *fname, *fullname;
 l_int32  exists, ret, i, nfiles;
 SARRAY  *sa;
 #ifdef _WIN32
 char    *newpath;
+#else
+char    *realdir;
 #endif  /* _WIN32 */
 
     PROCNAME("lept_rmdir");
