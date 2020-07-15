@@ -2274,6 +2274,7 @@ l_ok
 ccbaWriteStream(FILE     *fp,
                 CCBORDA  *ccba)
 {
+#if  HAVE_LIBZ  /* defined in environ.h */
 char        strbuf[256];
 l_uint8     bval;
 l_uint8    *datain, *dataout;
@@ -2286,6 +2287,7 @@ CCBORD     *ccb;
 NUMA       *na;
 NUMAA      *naa;
 PTA        *pta;
+#endif
 
     PROCNAME("ccbaWriteStream");
 
@@ -2421,6 +2423,7 @@ CCBORDA  *ccba;
 CCBORDA *
 ccbaReadStream(FILE  *fp)
 {
+#if  HAVE_LIBZ  /* defined in environ.h */
 char      strbuf[256];
 l_uint8   bval;
 l_uint8  *datain, *dataout;
@@ -2434,6 +2437,7 @@ CCBORD   *ccb;
 CCBORDA  *ccba;
 NUMA     *na;
 NUMAA    *step;
+#endif
 
     PROCNAME("ccbaReadStream");
 
