@@ -793,7 +793,7 @@ PIX  *pix1;
     } else if (type == L_SELECT_MAX) {
         pix1 = pixConvertRGBToGrayMinMax(pixs, L_CHOOSE_MAX);
     } else if (type == L_SELECT_AVERAGE) {
-        pix1 = pixConvertRGBToGray(pixs, 0.34, 0.33, 0.33);
+        pix1 = pixConvertRGBToGray(pixs, 0.34f, 0.33f, 0.33f);
     } else if (type == L_SELECT_HUE) {
         pix1 = pixConvertRGBToHue(pixs);
     } else if (type == L_SELECT_SATURATION) {

@@ -960,11 +960,11 @@ PIXA      *pixa;
 
             /* Generate contour plots at reduced resolution */
         dewarpPopulateFullRes(dew, NULL, 0, 0);
-        pixv = fpixRenderContours(dew->fullvdispar, 3.0, 0.15);
+        pixv = fpixRenderContours(dew->fullvdispar, 3.0, 0.15f);
         pixvs = pixScaleBySampling(pixv, scalefact, scalefact);
         pixDestroy(&pixv);
         if (shd) {
-            pixh = fpixRenderContours(dew->fullhdispar, 3.0, 0.15);
+            pixh = fpixRenderContours(dew->fullhdispar, 3.0, 0.15f);
             pixhs = pixScaleBySampling(pixh, scalefact, scalefact);
             pixDestroy(&pixh);
         }
@@ -1061,13 +1061,13 @@ PIX     *pixv, *pixh;
     lept_mkdir(subdirs);
     outdir = pathJoin("/tmp", subdirs);
     if (svd) {
-        pixv = fpixRenderContours(dew->fullvdispar, 3.0, 0.15);
+        pixv = fpixRenderContours(dew->fullvdispar, 3.0, 0.15f);
         snprintf(fname, sizeof(fname), "%s/pixv_%d.png", outdir, index);
         pixWriteDebug(fname, pixv, IFF_PNG);
         pixDestroy(&pixv);
     }
     if (shd) {
-        pixh = fpixRenderContours(dew->fullhdispar, 3.0, 0.15);
+        pixh = fpixRenderContours(dew->fullhdispar, 3.0, 0.15f);
         snprintf(fname, sizeof(fname), "%s/pixh_%d.png", outdir, index);
         pixWriteDebug(fname, pixh, IFF_PNG);
         pixDestroy(&pixh);

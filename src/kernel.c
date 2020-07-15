@@ -1269,7 +1269,7 @@ L_KERNEL  *kel;
         return (L_KERNEL *)ERROR_PTR("kel not made", procName, NULL);
     kernelSetOrigin(kel, halfh, halfw);
 
-    pi = 3.1415926535;
+    pi = 3.1415926535f;
     for (i = 0; i < sy; i++) {
         for (j = 0; j < sx; j++) {
             squaredist = (l_float32)((i - halfh) * (i - halfh) +

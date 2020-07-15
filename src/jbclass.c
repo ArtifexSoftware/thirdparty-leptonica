@@ -573,7 +573,7 @@ l_int32  n;
         /* Update total component counts and number of pages processed. */
     n = boxaGetCount(boxas);
     classer->baseindex += n;
-    numaAddNumber(classer->nacomps, n);
+    numaAddNumber(classer->nacomps, (l_float32)n);
     classer->npages++;
     return 0;
 }
@@ -711,8 +711,8 @@ SEL        *sel;
                 pixDestroy(&pix4);
                 if (testval == 1) {
                     found = TRUE;
-                    numaAddNumber(naclass, iclass);
-                    numaAddNumber(napage, npages);
+                    numaAddNumber(naclass, (l_float32)iclass);
+                    numaAddNumber(napage, (l_float32)npages);
                     if (classer->keep_pixaa) {
                         pixa = pixaaGetPixa(pixaa, iclass, L_CLONE);
                         pix = pixaGetPix(pixas, i, L_CLONE);
@@ -726,8 +726,8 @@ SEL        *sel;
             }
             findSimilarSizedTemplatesDestroy(&findcontext);
             if (found == FALSE) {  /* new class */
-                numaAddNumber(naclass, nt);
-                numaAddNumber(napage, npages);
+                numaAddNumber(naclass, (l_float32)nt);
+                numaAddNumber(napage, (l_float32)npages);
                 pixa = pixaCreate(0);
                 pix = pixaGetPix(pixas, i, L_CLONE);  /* unbordered instance */
                 pixaAddPix(pixa, pix, L_INSERT);
@@ -770,8 +770,8 @@ SEL        *sel;
                 pixDestroy(&pix4);
                 if (testval == 1) {  /* greedy match; take the first */
                     found = TRUE;
-                    numaAddNumber(naclass, iclass);
-                    numaAddNumber(napage, npages);
+                    numaAddNumber(naclass, (l_float32)iclass);
+                    numaAddNumber(napage, (l_float32)npages);
                     if (classer->keep_pixaa) {
                         pixa = pixaaGetPixa(pixaa, iclass, L_CLONE);
                         pix = pixaGetPix(pixas, i, L_CLONE);
@@ -785,8 +785,8 @@ SEL        *sel;
             }
             findSimilarSizedTemplatesDestroy(&findcontext);
             if (found == FALSE) {  /* new class */
-                numaAddNumber(naclass, nt);
-                numaAddNumber(napage, npages);
+                numaAddNumber(naclass, (l_float32)nt);
+                numaAddNumber(napage, (l_float32)npages);
                 pixa = pixaCreate(0);
                 pix = pixaGetPix(pixas, i, L_CLONE);  /* unbordered instance */
                 pixaAddPix(pixa, pix, L_INSERT);
@@ -799,7 +799,7 @@ SEL        *sel;
                 ptaAddPt(ptact, x1, y1);
                 pixaAddPix(pixat, pix1, L_INSERT);  /* bordered template */
                 pixaAddPix(pixatd, pix2, L_INSERT);  /* ditto */
-                numaAddNumber(nafgt, area1);
+                numaAddNumber(nafgt, (l_float32)area1);
             } else {  /* don't save them */
                 pixDestroy(&pix1);
                 pixDestroy(&pix2);
@@ -1138,7 +1138,7 @@ l_uint8     byte;
                  xsum / (l_float32)downcount, ysum / (l_float32)downcount);
         } else {  /* no pixels; shouldn't happen */
             L_ERROR("downcount == 0 !\n", procName);
-            ptaAddPt(pta, pixGetWidth(pix) / 2, pixGetHeight(pix) / 2);
+            ptaAddPt(pta, (l_float32)(pixGetWidth(pix) / 2), (l_float32)(pixGetHeight(pix) / 2));
         }
         pixDestroy(&pix);
     }
@@ -1201,7 +1201,7 @@ l_uint8     byte;
                 /* Find threshold for this template */
             if (weight > 0.0) {
                 numaGetIValue(naarea, iclass, &area);
-                threshold = thresh + (1. - thresh) * weight * area2 / area;
+                threshold = thresh + (1.f - thresh) * weight * area2 / area;
             } else {
                 threshold = thresh;
             }
@@ -1245,8 +1245,8 @@ l_uint8     byte;
 
             if (overthreshold) {  /* greedy match */
                 found = TRUE;
-                numaAddNumber(naclass, iclass);
-                numaAddNumber(napage, npages);
+                numaAddNumber(naclass, (l_float32)iclass);
+                numaAddNumber(napage, (l_float32)npages);
                 if (classer->keep_pixaa) {
                         /* We are keeping a record of all components */
                     pixa = pixaaGetPixa(pixaa, iclass, L_CLONE);
@@ -1261,8 +1261,8 @@ l_uint8     byte;
         }
         findSimilarSizedTemplatesDestroy(&findcontext);
         if (found == FALSE) {  /* new class */
-            numaAddNumber(naclass, nt);
-            numaAddNumber(napage, npages);
+            numaAddNumber(naclass, (l_float32)nt);
+            numaAddNumber(napage, (l_float32)npages);
             pixa = pixaCreate(0);
             pix = pixaGetPix(pixas, i, L_CLONE);  /* unbordered instance */
             pixaAddPix(pixa, pix, L_INSERT);
@@ -1273,11 +1273,11 @@ l_uint8     byte;
             pixaAddBox(pixa, box, L_INSERT);
             pixaaAddPixa(pixaa, pixa, L_INSERT);  /* unbordered instance */
             ptaAddPt(ptact, x1, y1);
-            numaAddNumber(nafgt, area1);
+            numaAddNumber(nafgt, (l_float32)area1);
             pixaAddPix(pixat, pix1, L_INSERT);   /* bordered template */
             area = (pixGetWidth(pix1) - 2 * JB_ADDED_PIXELS) *
                    (pixGetHeight(pix1) - 2 * JB_ADDED_PIXELS);
-            numaAddNumber(naarea, area);
+            numaAddNumber(naarea, (l_float32)area);
         } else {  /* don't save it */
             pixDestroy(&pix1);
         }
@@ -1490,11 +1490,11 @@ PIX      *pix1, *pix2;
             pix2 = pixMorphSequence(pix1, "d2.1", 0);
         boxa = pixConnCompBB(pix2, 4);
         ncc[i] = boxaGetCount(boxa);
-        numaAddNumber(nacc, ncc[i]);
+        numaAddNumber(nacc, (l_float32)ncc[i]);
         if (i == 0) total = ncc[0];
         if (i > 0) {
             diff = ncc[i - 1] - ncc[i];
-            numaAddNumber(nadiff, diff);
+            numaAddNumber(nadiff, (l_float32)diff);
         }
         pixDestroy(&pix1);
         pix1 = pix2;
@@ -1761,7 +1761,7 @@ PIXA      *pixad;
     for (i = 0; i < n; i++) {
         pixsum = pixaGetPix(pixac, i, L_COPY);  /* changed internally */
         numaGetFValue(na, i, &nt);
-        factor = 255. / nt;
+        factor = 255.f / nt;
         pixMultConstAccumulate(pixsum, factor, 0);  /* changes pixsum */
         pixd = pixFinalAccumulate(pixsum, 0, 8);
         pixaAddPix(pixad, pixd, L_INSERT);
@@ -2074,9 +2074,9 @@ SARRAY   *sa;
     for (i = 6; i < nsa; i++) {
         linestr = sarrayGetString(sa, i, L_NOCOPY);
         sscanf(linestr, "%d %d %d %d\n", &ipage, &iclass, &x, &y);
-        numaAddNumber(napage, ipage);
-        numaAddNumber(naclass, iclass);
-        ptaAddPt(ptaul, x, y);
+        numaAddNumber(napage, (l_float32)ipage);
+        numaAddNumber(naclass, (l_float32)iclass);
+        ptaAddPt(ptaul, (l_float32)x, (l_float32)y);
     }
 
     jbdata = (JBDATA *)LEPT_CALLOC(1, sizeof(JBDATA));
@@ -2271,7 +2271,7 @@ PTA       *ptac, *ptact, *ptaul;
                                      pixt, sumtab, &dx, &dy);
 /*        if (i % 20 == 0)
             lept_stderr("dx = %d, dy = %d\n", dx, dy); */
-        ptaAddPt(ptaul, x - idelx + dx, y - idely + dy);
+        ptaAddPt(ptaul, (l_float32)(x - idelx + dx), (l_float32)(y - idely + dy));
         boxDestroy(&box);
         pixDestroy(&pixt);
     }
@@ -2340,7 +2340,7 @@ PTA       *ptaul, *ptall;
         numaGetIValue(naclass, i, &iclass);
         pix = pixaGetPix(pixat, iclass, L_CLONE);
         h = pixGetHeight(pix);
-        ptaAddPt(ptall, x1, y1 + h - 1 - 2 * JB_ADDED_PIXELS);
+        ptaAddPt(ptall, (l_float32)x1, y1 + h - 1 - 2 * JB_ADDED_PIXELS);
         pixDestroy(&pix);
     }
 
