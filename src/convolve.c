@@ -2032,8 +2032,8 @@ PIX       *pixt, *pixd;
     xfact = ConvolveSamplingFactX;
     yfact = ConvolveSamplingFactY;
     if (normflag) {
-        kelxn = kernelNormalize(kelx, 1000.0);
-        kelyn = kernelNormalize(kely, 0.001);
+        kelxn = kernelNormalize(kelx, 1000.0f);
+        kelyn = kernelNormalize(kely, 0.001f);
         l_setConvolveSampling(xfact, 1);
         pixt = pixConvolve(pixs, kelxn, 32, 0);
         l_setConvolveSampling(1, yfact);

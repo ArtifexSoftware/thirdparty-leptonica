@@ -111,7 +111,7 @@
 #include "allheaders.h"
 
     /* Small enough to consider equal to 0.0, for plot output */
-static const l_float32  TINY = 0.00001;
+static const l_float32  TINY = 0.00001f;
 
 static l_ok findHistoGridDimensions(l_int32 n, l_int32 w, l_int32 h,
                                     l_int32 *pnx, l_int32 *pny, l_int32 debug);
@@ -1193,7 +1193,7 @@ PIXACC    *pixacc;
         pixaccAdd(pixacc, pixrdiff);
         pixaccAdd(pixacc, pixgdiff);
         pixaccAdd(pixacc, pixbdiff);
-        pixaccMultConst(pixacc, 1. / 3.);
+        pixaccMultConst(pixacc, 1.f / 3.f);
         *ppixdiff = pixaccFinal(pixacc, 8);
         pixDestroy(&pixr);
         pixDestroy(&pixg);
@@ -1954,7 +1954,7 @@ PIX        *pix;
         return ERROR_INT("pixa not defined", procName, 1);
     if (minratio < 0.0 || minratio > 1.0)
         return ERROR_INT("minratio not in [0.0 ... 1.0]", procName, 1);
-    if (textthresh <= 0.0) textthresh = 1.3;
+    if (textthresh <= 0.0) textthresh = 1.3f;
     if (factor < 1)
         return ERROR_INT("subsampling factor must be >= 1", procName, 1);
     if (n < 1 || n > 7) {
@@ -2290,7 +2290,7 @@ PIXA   *pixa;
         return ERROR_INT("pixs not defined or 1 bpp", procName, 1);
     if (factor < 1)
         return ERROR_INT("subsampling factor must be >= 1", procName, 1);
-    if (thresh <= 0.0) thresh = 1.3;  /* default */
+    if (thresh <= 0.0) thresh = 1.3f;  /* default */
     if (n < 1 || n > 7) {
         L_WARNING("n = %d is invalid; setting to 4\n", procName, n);
         n = 4;
@@ -2542,7 +2542,7 @@ PIXA      *pixa1, *pixa2, *pixa3;
         L_WARNING("n = %d is invalid; setting to 4\n", procName, n);
         n = 4;
     }
-    if (thresh <= 0.0) thresh = 1.3;  /* default */
+    if (thresh <= 0.0) thresh = 1.3f;  /* default */
 
         /* Look for text lines */
     pixDecideIfText(pix, NULL, &istext, pixadebug);
@@ -2589,7 +2589,7 @@ PIXA      *pixa1, *pixa2, *pixa3;
         pix1 = pixaDisplayTiledInColumns(pixa1, nx, 1.0, 30, 2);
         pixaAddPix(pixadebug, pix1, L_INSERT);
         pixa2 = pixaReadFiles("/tmp/lept/compplot", ".png");
-        pixa3 = pixaScale(pixa2, 0.4, 0.4);
+        pixa3 = pixaScale(pixa2, 0.4f, 0.4f);
         pix1 = pixaDisplayTiledInColumns(pixa3, nx, 1.0, 30, 2);
         pixaAddPix(pixadebug, pix1, L_INSERT);
         pixaDestroy(&pixa2);
@@ -2609,7 +2609,7 @@ PIXA      *pixa1, *pixa2, *pixa3;
     numaGetSumOnInterval(narv, 50, 150, &sum1);
     numaGetSumOnInterval(narv, 200, 230, &sum2);
     if (sum2 == 0.0) {  /* shouldn't happen */
-        ratio = 0.001;  /* anything very small for debug output */
+        ratio = 0.001f;  /* anything very small for debug output */
         isphoto = 0;  /* be conservative */
     } else {
         ratio = sum1 / sum2;

@@ -147,7 +147,7 @@ static void rotateAMColorFastLow(l_uint32 *datad, l_int32 w, l_int32 h,
                                  l_int32 wpld, l_uint32 *datas, l_int32 wpls,
                                  l_float32 angle, l_uint32 colorval);
 
-static const l_float32  MinAngleToRotate = 0.001;  /* radians; ~0.06 deg */
+static const l_float32  MinAngleToRotate = 0.001f;  /* radians; ~0.06 deg */
 
 
 /*------------------------------------------------------------------*

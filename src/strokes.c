@@ -161,7 +161,7 @@ PIX        *pix1;
     pix1 = pixDistanceFunction(pixs, 8, 8, L_BOUNDARY_BG);
     na1 = pixGetGrayHistogram(pix1, 1);
     pixDestroy(&pix1);
-    numaGetNonzeroRange(na1, 0.1, &first, &last);
+    numaGetNonzeroRange(na1, 0.1f, &first, &last);
     na2 = numaClipToInterval(na1, 0, last);
     numaWriteStderr(na2);
 
@@ -274,7 +274,7 @@ PIXA      *pixad;
     if (maxd > 1)
         return (PIXA *)ERROR_PTR("pix not all 1 bpp", procName, NULL);
 
-    na = pixaFindStrokeWidth(pixas, 0.1, NULL, 0);
+    na = pixaFindStrokeWidth(pixas, 0.1f, NULL, 0);
     n = pixaGetCount(pixas);
     pixad = pixaCreate(n);
     for (i = 0; i < n; i++) {

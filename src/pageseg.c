@@ -1393,7 +1393,7 @@ SEL       *sel1;
         return ERROR_INT("pixs not defined", procName, 1);
 
         /* Crop, convert to 1 bpp, 300 ppi */
-    if ((pix1 = pixPrepare1bpp(pixs, box, 0.1, 300)) == NULL)
+    if ((pix1 = pixPrepare1bpp(pixs, box, 0.1f, 300)) == NULL)
         return ERROR_INT("pix1 not made", procName, 1);
 
     pixZero(pix1, &empty);
@@ -1646,7 +1646,7 @@ PIX     *pix1, *pix2, *pix3, *pix4, *pix5, *pix6, *pix7, *pix8, *pix9;
 
         /* Check if there is an image region.  First convert to 1 bpp
          * at 175 ppi.  If an image is found, assume there is no table.  */
-    pix1 = pixPrepare1bpp(pixs, box, 0.1, 175);
+    pix1 = pixPrepare1bpp(pixs, box, 0.1f, 175);
     pix2 = pixGenerateHalftoneMask(pix1, NULL, &htfound, NULL);
     if (htfound && pixadb) pixaAddPix(pixadb, pix2, L_COPY);
     pixDestroy(&pix1);
@@ -1658,7 +1658,7 @@ PIX     *pix1, *pix2, *pix3, *pix4, *pix5, *pix6, *pix7, *pix8, *pix9;
     }
 
         /* Crop, convert to 1 bpp, 75 ppi */
-    if ((pix1 = pixPrepare1bpp(pixs, box, 0.05, 75)) == NULL)
+    if ((pix1 = pixPrepare1bpp(pixs, box, 0.05f, 75)) == NULL)
         return ERROR_INT("pix1 not made", procName, 1);
 
     pixZero(pix1, &empty);

@@ -110,14 +110,14 @@ static const l_float32  DefaultSweepDelta = 1.0;   /* degrees */
      * search in pixFindSkew().  The expected accuracy is
      * not better than the inverse image width in pixels,
      * say, 1/2000 radians, or about 0.03 degrees. */
-static const l_float32  DefaultMinbsDelta = 0.01;  /* degrees */
+static const l_float32  DefaultMinbsDelta = 0.01f;  /* degrees */
 
     /* Default scale factors for pixFindSkew() */
 static const l_int32  DefaultSweepReduction = 4;  /* sweep part; 4 is good */
 static const l_int32  DefaultBsReduction = 2;  /* binary search part */
 
     /* Minimum angle for deskewing in pixDeskew() */
-static const l_float32  MinDeskewAngle = 0.1;  /* degree */
+static const l_float32  MinDeskewAngle = 0.1f;  /* degree */
 
     /* Minimum allowed confidence (ratio) for deskewing in pixDeskew() */
 static const l_float32  MinAllowedConfidence = 3.0;
@@ -128,7 +128,7 @@ static const l_int32  MinValidMaxscore = 10000;
     /* Constant setting threshold for minimum allowed minscore
      * to give nonzero confidence; multiply this constant by
      *  (height * width^2) */
-static const l_float32  MinscoreThreshFactor = 0.000002;
+static const l_float32  MinscoreThreshFactor = 0.000002f;
 
     /* Default binarization threshold value */
 static const l_int32  DefaultBinaryThreshold = 130;
@@ -321,7 +321,7 @@ PIX       *pixb, *pixd;
     if (thresh == 0)
         thresh = DefaultBinaryThreshold;
 
-    deg2rad = 3.1415926535 / 180.;
+    deg2rad = 3.1415926535f / 180.f;
 
         /* Binarize if necessary */
     depth = pixGetDepth(pixs);
@@ -440,7 +440,7 @@ PIX       *pix, *pixt;
     if (reduction != 1 && reduction != 2 && reduction != 4 && reduction != 8)
         return ERROR_INT("reduction must be in {1,2,4,8}", procName, 1);
 
-    deg2rad = 3.1415926535 / 180.;
+    deg2rad = 3.1415926535f / 180.f;
     ret = 0;
 
         /* Generate reduced image, if requested */
@@ -705,7 +705,7 @@ PIX       *pixsw, *pixsch, *pixt1, *pixt2;
     if (pivot != L_SHEAR_ABOUT_CORNER && pivot != L_SHEAR_ABOUT_CENTER)
         return ERROR_INT("invalid pivot", procName, 1);
 
-    deg2rad = 3.1415926535 / 180.;
+    deg2rad = 3.1415926535f / 180.f;
     ret = 0;
 
         /* Generate reduced image for binary search, if requested */

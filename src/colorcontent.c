@@ -977,7 +977,7 @@ PIX       *pix1, *pix2, *pix3, *pix4, *pix5, *pixm1, *pixm2, *pixm3;
     if (darkthresh < 0) darkthresh = 70;
     if (mindiff < 0) mindiff = 10;
     if (colordiff < 0) colordiff = 90;
-    if (edgefract < 0.0 || edgefract > 1.0) edgefract = 0.05;
+    if (edgefract < 0.0 || edgefract > 1.0) edgefract = 0.05f;
 
         /* Check if pixm covers most of the image.  If so, just return. */
     if (pixm) {
@@ -1018,7 +1018,7 @@ PIX       *pix1, *pix2, *pix3, *pix4, *pix5, *pixm1, *pixm2, *pixm3;
          * convert to gray using the average of the components;
          * threshold using darkthresh; do a small dilation;
          * combine with pixm. */
-    pix1 = pixConvertRGBToGray(pixs, 0.33, 0.34, 0.33);
+    pix1 = pixConvertRGBToGray(pixs, 0.33f, 0.34f, 0.33f);
     if (pixadb) pixaAddPix(pixadb, pix1, L_COPY);
     pixm1 = pixThresholdToBinary(pix1, darkthresh);
     pixDilateBrick(pixm1, pixm1, 7, 7);
@@ -1179,7 +1179,7 @@ NUMA    *na;
         return ERROR_INT("pixs not defined or not 8 bpp", procName, 1);
     if (darkthresh < 0) darkthresh = 20;  /* defaults */
     if (lightthresh < 0) lightthresh = 236;
-    if (minfract < 0.0) minfract = 0.0001;
+    if (minfract < 0.0) minfract = 0.0001f;
     if (minfract > 1.0)
         return ERROR_INT("minfract > 1.0", procName, 1);
     if (minfract >= 0.001)
@@ -1382,7 +1382,7 @@ PIXCMAP   *cmap;
     if (d == 8) {
         pixSetMasked(pixg, pixm, 0xff);
         if (debug) pixWrite("junkpix8.png", pixg, IFF_PNG);
-        pixNumSignificantGrayColors(pixg, 20, 236, 0.0001, 1, pncolors);
+        pixNumSignificantGrayColors(pixg, 20, 236, 0.0001f, 1, pncolors);
     } else {  /* d == 32 */
         pixSetMasked(pixsc, pixm, 0xffffffff);
         if (debug) pixWrite("junkpix32.png", pixsc, IFF_PNG);

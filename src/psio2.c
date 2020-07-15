@@ -117,7 +117,7 @@ static const l_int32  LetterWidth  = 612;   /* points */
 static const l_int32  LetterHeight = 792;   /* points */
 static const l_int32  A4Width      = 595;   /* points */
 static const l_int32  A4Height     = 842;   /* points */
-static const l_float32  DefaultFillFraction = 0.95;
+static const l_float32  DefaultFillFraction = 0.95f;
 
 #ifndef  NO_CONSOLE_IO
 #define  DEBUG_JPEG       0
