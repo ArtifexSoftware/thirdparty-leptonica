@@ -101,10 +101,14 @@
 char *
 getImagelibVersions(void)
 {
+#if HAVE_LIBGIF || HAVE_LIBJPEG
 char     buf[128];
+#endif
 l_int32  first = TRUE;
+#if HAVE_LIBJPEG || HAVE_LIBTIFF
 char    *versionNumP;
 char    *nextTokenP;
+#endif
 char    *versionStrP = NULL;
 
 #if HAVE_LIBGIF
