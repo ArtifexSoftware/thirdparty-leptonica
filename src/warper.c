@@ -80,9 +80,9 @@ static l_int32 applyWarpTransform(l_float32 xmag, l_float32 ymag,
 
     /* Suggested input to pixStereoFromPair().  These are weighting
      * factors for input to the red channel from the left image. */
-static const l_float32  DefaultRedWeight   = 0.0;
-static const l_float32  DefaultGreenWeight = 0.7;
-static const l_float32  DefaultBlueWeight  = 0.3;
+static const l_float32  DefaultRedWeight   = 0.0f;
+static const l_float32  DefaultGreenWeight = 0.7f;
+static const l_float32  DefaultBlueWeight  = 0.3f;
 
 
 /*----------------------------------------------------------------------*

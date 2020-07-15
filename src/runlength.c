@@ -130,7 +130,7 @@ PIX       *pixh, *pixv, *pixt, *pixg1, *pixg2, *pixg3, *pixg4;
     pixDestroy(&pixv);
 
     pixg2 = pixg3 = pixg4 = NULL;
-    pi = 3.1415926535;
+    pi = 3.1415926535f;
     if (nangles == 4 || nangles == 8) {
             /* Find min length at +45 and -45 degrees */
         angle = pi / 4.0;

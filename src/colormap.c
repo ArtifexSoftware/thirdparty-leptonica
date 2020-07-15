@@ -1635,7 +1635,7 @@ PIXCMAP   *cmapd;
     sum = rwt + gwt + bwt;
     if (sum == 0.0) {
         L_WARNING("all weights zero; setting equal to 1/3\n", procName);
-        rwt = gwt = bwt = 0.33333;
+        rwt = gwt = bwt = 0.33333f;
         sum = 1.0;
     }
     if (L_ABS(sum - 1.0) > 0.0001) {  /* maintain ratios with sum == 1.0 */

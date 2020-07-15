@@ -3538,7 +3538,7 @@ PIXA      *pixa;
     nastdev = numaCreate(n);
     for (i = 0; i < n; i++) {
         pix = pixaGetPix(pixa, i, L_CLONE);
-        pixg = pixConvertRGBToGray(pix, 0.33, 0.34, 0.33);
+        pixg = pixConvertRGBToGray(pix, 0.33f, 0.34f, 0.33f);
         pixGetAverageMasked(pixg, NULL, 0, 0, 1, L_MEAN_ABSVAL, &mean);
         pixGetAverageMasked(pixg, NULL, 0, 0, 1, L_STANDARD_DEVIATION, &stdev);
         numaAddNumber(namean, mean);

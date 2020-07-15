@@ -338,7 +338,7 @@ PIX       *pixt, *pixd;
     mindest = (l_int32)((l_float32)minsrc * scalefactor);
     if (mindest < 2)
         return (PIX *)ERROR_PTR("scalefactor too small", procName, NULL);
-    eps = 0.0001;
+    eps = 0.0001f;
 
         /* Handle the special cases */
     if (scalefactor > 0.5 - eps && scalefactor < 0.5 + eps)
@@ -471,7 +471,7 @@ PIX       *pixd;
         return (PIX *)ERROR_PTR("pixd not made", procName, NULL);
     pixCopyInputFormat(pixd, pixs);
     pixCopyResolution(pixd, pixs);
-    pixScaleResolution(pixd, 0.33333, 0.33333);
+    pixScaleResolution(pixd, 0.33333f, 0.33333f);
     datas = pixGetData(pixs);
     datad = pixGetData(pixd);
     wpls = pixGetWpl(pixs);
@@ -579,7 +579,7 @@ PIX       *pixd;
         return (PIX *)ERROR_PTR("pixd not made", procName, NULL);
     pixCopyInputFormat(pixd, pixs);
     pixCopyResolution(pixd, pixs);
-    pixScaleResolution(pixd, 0.16667, 0.16667);
+    pixScaleResolution(pixd, 0.16667f, 0.16667f);
     datas = pixGetData(pixs);
     datad = pixGetData(pixd);
     wpls = pixGetWpl(pixs);

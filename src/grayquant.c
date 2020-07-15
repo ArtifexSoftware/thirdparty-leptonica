@@ -2356,7 +2356,7 @@ PIXCMAP   *cmap;
         return (PIX *)ERROR_PTR("pixs undefined or not 8 bpp", procName, NULL);
     if (minfract < 0.01) {
         L_WARNING("minfract < 0.01; setting to 0.05\n", procName);
-        minfract = 0.05;
+        minfract = 0.05f;
     }
     if (maxsize < 2) {
         L_WARNING("maxsize < 2; setting to 10\n", procName);
@@ -2590,7 +2590,7 @@ PIX       *pixd;
     pixcmapHasColor(cmap, &hascolor);
     if (hascolor) {
         L_WARNING("Converting colormap colors to gray\n", procName);
-        cmapd = pixcmapColorToGray(cmap, 0.3, 0.5, 0.2);
+        cmapd = pixcmapColorToGray(cmap, 0.3f, 0.5f, 0.2f);
     } else {
         cmapd = pixcmapCopy(cmap);
     }

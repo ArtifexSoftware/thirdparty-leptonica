@@ -2656,7 +2656,7 @@ PIXCMAP   *cmap;
     else if (type == L_SELECT_MAX)
         pixg = pixConvertRGBToGrayMinMax(pixc, L_CHOOSE_MAX);
     else if (type == L_SELECT_AVERAGE)
-        pixg = pixConvertRGBToGray(pixc, 0.34, 0.33, 0.33);
+        pixg = pixConvertRGBToGray(pixc, 0.34f, 0.33f, 0.33f);
     else if (type == L_SELECT_HUE)
         pixg = pixConvertRGBToHue(pixc);
     else  /* L_SELECT_SATURATION */

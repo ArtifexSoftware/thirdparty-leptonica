@@ -210,9 +210,9 @@ NUMA       *nad;
     if ((fas = (l_float32 *)LEPT_CALLOC(len, sizeof(l_float32))) == NULL)
         return (NUMA *)ERROR_PTR("fas not made", procName, NULL);
     for (i = 0; i < hsize; i++)
-         fas[i] = 1.0e37;
+         fas[i] = 1.0e37f;
     for (i = hsize + n; i < len; i++)
-         fas[i] = 1.0e37;
+         fas[i] = 1.0e37f;
     fa = numaGetFArray(nas, L_NOCOPY);
     for (i = 0; i < n; i++)
          fas[hsize + i] = fa[i];
@@ -221,7 +221,7 @@ NUMA       *nad;
     numaCopyParameters(nad, nas);
     fad = numaGetFArray(nad, L_NOCOPY);
     for (i = 0; i < n; i++) {
-        minval = 1.0e37;  /* start big */
+        minval = 1.0e37f;  /* start big */
         for (j = 0; j < size; j++)
             minval = L_MIN(minval, fas[i + j]);
         fad[i] = minval;
@@ -279,9 +279,9 @@ NUMA       *nad;
     if ((fas = (l_float32 *)LEPT_CALLOC(len, sizeof(l_float32))) == NULL)
         return (NUMA *)ERROR_PTR("fas not made", procName, NULL);
     for (i = 0; i < hsize; i++)
-         fas[i] = -1.0e37;
+         fas[i] = -1.0e37f;
     for (i = hsize + n; i < len; i++)
-         fas[i] = -1.0e37;
+         fas[i] = -1.0e37f;
     fa = numaGetFArray(nas, L_NOCOPY);
     for (i = 0; i < n; i++)
          fas[hsize + i] = fa[i];
@@ -290,7 +290,7 @@ NUMA       *nad;
     numaCopyParameters(nad, nas);
     fad = numaGetFArray(nad, L_NOCOPY);
     for (i = 0; i < n; i++) {
-        maxval = -1.0e37;  /* start small */
+        maxval = -1.0e37f;  /* start small */
         for (j = 0; j < size; j++)
             maxval = L_MAX(maxval, fas[i + j]);
         fad[i] = maxval;
