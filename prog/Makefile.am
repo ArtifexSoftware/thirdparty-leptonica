@@ -1,6 +1,6 @@
 AUTOMAKE_OPTIONS = parallel-tests
 AM_CPPFLAGS = -I$(top_srcdir)/src -I$(top_builddir)/src
-LDADD = $(top_builddir)/src/liblept.la $(LIBM)
+LDADD = $(top_builddir)/src/libleptonica.la $(LIBM)
  
 INSTALL_PROGS = convertfilestopdf convertfilestops \
 	convertformat convertsegfilestopdf convertsegfilestops \
@@ -34,7 +34,7 @@ AUTO_REG_PROGS = adaptmap_reg adaptnorm_reg affine_reg alphaops_reg \
 	maze_reg mtiff_reg multitype_reg \
 	nearline_reg newspaper_reg numa1_reg numa2_reg numa3_reg \
 	overlap_reg pageseg_reg paint_reg paintmask_reg \
-	pdfio1_reg pdfio2_reg pdfseg_reg \
+	partition_reg pdfio1_reg pdfio2_reg pdfseg_reg \
 	pixa1_reg pixa2_reg pixadisp_reg pixcomp_reg \
 	pixmem_reg pixserial_reg pngio_reg pnmio_reg \
 	projection_reg projective_reg \
@@ -82,9 +82,9 @@ OTHER_PROGS = adaptmap_dark \
 	blendcmaptest buffertest \
 	ccbordtest cctest1 cleanpdf \
 	colorsegtest comparepages comparepixa \
-	comparetest concatpdf \
+	comparetest compresspdf \
 	contrasttest converttogray \
-	cornertest corrupttest croptext deskew_it \
+	cornertest corrupttest croppdf croptext deskew_it \
 	dewarprules dewarptest1 dewarptest2 \
 	dewarptest3 dewarptest4 dewarptest5 \
 	digitprep1 displayboxa displayboxes_on_pixa \
@@ -93,7 +93,7 @@ OTHER_PROGS = adaptmap_dark \
 	findpattern1 findpattern2 findpattern3 \
 	fmorphautogen fpixcontours \
 	gammatest graphicstest graymorphtest \
-	histotest histoduptest htmlviewer \
+	hashtest histoduptest histotest htmlviewer \
 	jbcorrelation jbrankhaus jbwords \
 	listtest lightcolortest livre_adapt livre_hmt \
 	livre_makefigs livre_orient \
@@ -113,11 +113,11 @@ OTHER_PROGS = adaptmap_dark \
 	renderfonts replacebytes \
 	rotatefastalt rotate_it \
 	rotateorthtest1 rotatetest1 \
-	runlengthtest scaleandtile \
+	runlengthtest scaleandtile scaleimages \
 	scale_it scaletest1 scaletest2 \
 	seedfilltest settest sharptest \
 	sheartest showedges skewtest \
-	sorttest splitimage2pdf sudokutest \
+	sorttest splitimage2pdf splitpdf sudokutest \
 	textorient tiffpdftest trctest \
 	underlinetest warpertest wordsinorder \
 	writemtiff yuvtest

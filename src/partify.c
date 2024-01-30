@@ -81,20 +81,18 @@ partifyFiles(const char  *dirname,
 PIXA   *pixadb;
 PIXAC  *pixac;
 
-    PROCNAME("partifyFiles");
-
     if (!dirname)
-        return ERROR_INT("dirname not defined", procName, 1);
+        return ERROR_INT("dirname not defined", __func__, 1);
     if (nparts < 0 || nparts > 10)
-        return ERROR_INT("nparts not in [1 ... 10]", procName, 1);
+        return ERROR_INT("nparts not in [1 ... 10]", __func__, 1);
     if (!outroot || outroot[0] == '\n')
-        return ERROR_INT("outroot undefined or empty", procName, 1);
+        return ERROR_INT("outroot undefined or empty", __func__, 1);
 
     pixadb = (debugfile) ? pixaCreate(0) : NULL;
     pixac = pixacompCreateFromFiles(dirname, substr, IFF_PNG);
     partifyPixac(pixac, nparts, outroot, pixadb);
     if (pixadb) {
-        L_INFO("writing debug output to %s\n", procName, debugfile);
+        L_INFO("writing debug output to %s\n", __func__, debugfile);
         pixaConvertToPdf(pixadb, 300, 1.0, L_FLATE_ENCODE, 0,
                          "Partify Debug", debugfile);
     }
@@ -134,16 +132,14 @@ BOXA      *boxa1, *boxa2, *boxa3;
 PIX       *pix1, *pix2, *pix3, *pix4, *pix5;
 PIXAC    **pixaca;
 
-    PROCNAME("partifyPixac");
-
     if (!pixac)
-        return ERROR_INT("pixac not defined", procName, 1);
+        return ERROR_INT("pixac not defined", __func__, 1);
     if ((npage = pixacompGetCount(pixac)) == 0)
-        return ERROR_INT("pixac is empty", procName, 1);
+        return ERROR_INT("pixac is empty", __func__, 1);
     if (nparts < 1 || nparts > 10)
-        return ERROR_INT("nparts not in [1 ... 10]", procName, 1);
+        return ERROR_INT("nparts not in [1 ... 10]", __func__, 1);
     if (!outroot || outroot[0] == '\n')
-        return ERROR_INT("outroot undefined or empty", procName, 1);
+        return ERROR_INT("outroot undefined or empty", __func__, 1);
 
         /* Initialize the output array for each of the nparts */
     pixaca = (PIXAC **)LEPT_CALLOC(nparts, sizeof(PIXAC *));
@@ -155,7 +151,7 @@ PIXAC    **pixaca;
     bmf = bmfCreate(NULL, 10);
     for (pageno = 0; pageno < npage; pageno++) {
         if ((pix1 = pixacompGetPix(pixac, pageno)) == NULL) {
-            L_ERROR("pix for page %d not found\n", procName, pageno);
+            L_ERROR("pix for page %d not found\n", __func__, pageno);
             continue;
         }
 
@@ -164,9 +160,9 @@ PIXAC    **pixaca;
         if (res == 0 || res == 300 || res > 600) {
             pix2 = pixClone(pix1);
         } else {
-            factor = 300.0 / (l_float32)res;
+            factor = 300.0f / (l_float32)res;
             if (factor > 3)
-                L_WARNING("resolution is very low\n", procName);
+                L_WARNING("resolution is very low\n", __func__);
             pix2 = pixScale(pix1, factor, factor);
         }
         pix3 = pixConvertTo1Adaptive(pix2);
@@ -175,7 +171,7 @@ PIXAC    **pixaca;
         pixDestroy(&pix2);
         pixDestroy(&pix3);
         if (!pix4) {
-            L_ERROR("pix for page %d not deskewed\n", procName, pageno);
+            L_ERROR("pix for page %d not deskewed\n", __func__, pageno);
             continue;
         }
         pix1 = pixClone(pix4);  /* rename */
@@ -205,7 +201,7 @@ PIXAC    **pixaca;
             icount = boxaGetCount(boxa3);
             if (icount < nparts)
                 L_WARNING("nparts requested = %d, but only found %d\n",
-                          procName, nparts, icount);
+                          __func__, nparts, icount);
             for (j = 0; j < icount && j < nparts; j++) {
                 box2 = boxaGetBox(boxa3, j, L_COPY);
                 if (j == nparts - 1)  /* extend the box to the bottom */
@@ -231,7 +227,7 @@ PIXAC    **pixaca;
         /* Output separate pdfs for each part */
     for (i = 0; i < nparts; i++) {
         snprintf(buf, sizeof(buf), "%s-%d.pdf", outroot, i);
-        L_INFO("writing part %d: %s\n", procName, i, buf);
+        L_INFO("writing part %d: %s\n", __func__, i, buf);
         pixacompConvertToPdf(pixaca[i], 300, 1.0, L_G4_ENCODE, 0, NULL, buf);
         pixacompDestroy(&pixaca[i]);
     }
@@ -256,6 +252,9 @@ pixLocateStaveSets(PIX     *pixs,
 {
 BOXA  *boxa1, *boxa2, *boxa3, *boxa4;
 PIX   *pix1, *pix2;
+
+    if (!pixs)
+        return (BOXA *)ERROR_PTR("pixs not defined", __func__, NULL);
 
         /* Find the stave sets at 4x reduction */
     pix1 = pixMorphSequence(pixs, "r11", 0);
@@ -302,7 +301,10 @@ boxaRemoveVGaps(BOXA  *boxa)
 {
 l_int32  nbox, i, y1, h1, y2, h2, delta;
 
-    nbox = boxaGetCount(boxa);
+    if (!boxa)
+        return ERROR_INT("boxa not defined", __func__, 1);
+    if ((nbox = boxaGetCount(boxa)) == 0);
+        return ERROR_INT("boxa is empty", __func__, 1);
     for (i = 0; i < nbox - 1; i++) {
         boxaGetBoxGeometry(boxa, i, NULL, &y1, NULL, &h1);
         boxaGetBoxGeometry(boxa, i + 1, NULL, &y2, NULL, &h2);

@@ -123,6 +123,7 @@
 
 #include <string.h>
 #include "allheaders.h"
+#include "pix_internal.h"
 
 /* --------------------------------------------*/
 #if  HAVE_LIBPNG   /* defined in environ.h */
@@ -162,16 +163,18 @@ static l_int32   var_PNG_STRIP_16_TO_8 = 1;
  *          at the beginning of the file.
  *      (2) To do sequential reads of png format images from a stream,
  *          use pixReadStreamPng()
- *      (3) Any image with alpha is converted to RGBA (spp = 4, with
+ *      (3) All images with alpha is converted to RGBA (spp = 4, with
  *          equal red, green and blue channels) on reading.
- *          There are three important cases with alpha:
- *          (a) grayscale-with-alpha (spp = 2), where bpp = 8, and each
+ *          There are three cases with alpha:
+ *          (a) RGBA: spp = 4.  The alpha value is the fourth byte
+ *              (aka "channel, "component") in each 4-byte pixel.
+ *          (b) grayscale-with-alpha (spp = 2), where bpp = 8, and each
  *              pixel has an associated alpha (transparency) value
  *              in the second component of the image data.
- *          (b) spp = 1, d = 1 with colormap and alpha in the trans array.
- *              Transparency is usually associated with the white background.
- *          (c) spp = 1, d = 8 with colormap and alpha in the trans array.
- *              Each color in the colormap has a separate transparency value.
+ *          (c) colormap (spp = 1) with alpha in the trans palette.
+ *              d = 1, 2, 4, 8.  The trans palette in writing is derived
+ *              from the alpha components in the cmap.  Transparency is
+ *              often associated with a white background.
  *      (4) We use the high level png interface, where the transforms are set
  *          up in advance and the header and image are read with a single
  *          call.  The more complicated interface, where the header is
@@ -185,8 +188,8 @@ PIX *
 pixReadStreamPng(FILE  *fp)
 {
 l_uint8      byte;
-l_int32      i, j, k, index, ncolors, bitval, rval, gval, bval, valid;
-l_int32      wpl, d, spp, cindex, tRNS;
+l_int32      i, j, k, index, ncolors, rval, gval, bval, valid;
+l_int32      wpl, d, spp, cindex, bitval, bival, quadval, tRNS;
 l_uint32     png_transforms;
 l_uint32    *data, *line, *ppixel;
 int          num_palette, num_text, num_trans;
@@ -201,31 +204,29 @@ png_textp    text_ptr;  /* ptr to text_chunk */
 PIX         *pix, *pix1;
 PIXCMAP     *cmap;
 
-    PROCNAME("pixReadStreamPng");
-
     if (!fp)
-        return (PIX *)ERROR_PTR("fp not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("fp not defined", __func__, NULL);
     pix = NULL;
 
         /* Allocate the 3 data structures */
     if ((png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING,
                    (png_voidp)NULL, NULL, NULL)) == NULL)
-        return (PIX *)ERROR_PTR("png_ptr not made", procName, NULL);
+        return (PIX *)ERROR_PTR("png_ptr not made", __func__, NULL);
 
     if ((info_ptr = png_create_info_struct(png_ptr)) == NULL) {
         png_destroy_read_struct(&png_ptr, (png_infopp)NULL, (png_infopp)NULL);
-        return (PIX *)ERROR_PTR("info_ptr not made", procName, NULL);
+        return (PIX *)ERROR_PTR("info_ptr not made", __func__, NULL);
     }
 
     if ((end_info = png_create_info_struct(png_ptr)) == NULL) {
         png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp)NULL);
-        return (PIX *)ERROR_PTR("end_info not made", procName, NULL);
+        return (PIX *)ERROR_PTR("end_info not made", __func__, NULL);
     }
 
         /* Set up png setjmp error handling */
     if (setjmp(png_jmpbuf(png_ptr))) {
         png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
-        return (PIX *)ERROR_PTR("internal png error", procName, NULL);
+        return (PIX *)ERROR_PTR("internal png error", __func__, NULL);
     }
 
     png_init_io(png_ptr, fp);
@@ -242,7 +243,7 @@ PIXCMAP     *cmap;
         png_transforms = PNG_TRANSFORM_STRIP_16;
     } else {
         png_transforms = PNG_TRANSFORM_IDENTITY;
-        L_INFO("not stripping 16 --> 8 in png reading\n", procName);
+        L_INFO("not stripping 16 --> 8 in png reading\n", __func__);
     }
 
         /* Read it */
@@ -267,10 +268,10 @@ PIXCMAP     *cmap;
         /* Remove if/when this is implemented for all bit_depths */
     if (spp != 1 && bit_depth != 8) {
         L_ERROR("spp = %d and bps = %d != 8\n"
-                "turn on 16 --> 8 stripping\n", procName, spp, bit_depth);
+                "turn on 16 --> 8 stripping\n", __func__, spp, bit_depth);
         png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
         return (PIX *)ERROR_PTR("not implemented for this image",
-            procName, NULL);
+            __func__, NULL);
     }
 
     cmap = NULL;
@@ -289,7 +290,7 @@ PIXCMAP     *cmap;
     if ((pix = pixCreate(w, h, d)) == NULL) {
         pixcmapDestroy(&cmap);
         png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
-        return (PIX *)ERROR_PTR("pix not made", procName, NULL);
+        return (PIX *)ERROR_PTR("pix not made", __func__, NULL);
     }
     pixSetInputFormat(pix, IFF_PNG);
     wpl = pixGetWpl(pix);
@@ -297,7 +298,7 @@ PIXCMAP     *cmap;
     pixSetSpp(pix, spp);
     if (pixSetColormap(pix, cmap)) {
         pixDestroy(&pix);
-        return (PIX *)ERROR_PTR("invalid colormap", procName, NULL);
+        return (PIX *)ERROR_PTR("invalid colormap", __func__, NULL);
     }
 
     if (spp == 1 && !tRNS) {  /* copy straight from buffer to pix */
@@ -309,7 +310,7 @@ PIXCMAP     *cmap;
             }
         }
     } else if (spp == 2) {  /* grayscale + alpha; convert to RGBA */
-        L_INFO("converting (gray + alpha) ==> RGBA\n", procName);
+        L_INFO("converting (gray + alpha) ==> RGBA\n", __func__);
         for (i = 0; i < h; i++) {
             ppixel = data + i * wpl;
             rowptr = row_pointers[i];
@@ -343,19 +344,21 @@ PIXCMAP     *cmap;
         /* Special spp == 1 cases with transparency:
          *    (1) 8 bpp without colormap; assume full transparency
          *    (2) 1 bpp with colormap + trans array (for alpha)
-         *    (3) 8 bpp with colormap + trans array (for alpha)
+         *    (3) 2 bpp with colormap + trans array (for alpha)
+         *    (4) 4 bpp with colormap + trans array (for alpha)
+         *    (5) 8 bpp with colormap + trans array (for alpha)
          * These all require converting to RGBA */
     if (spp == 1 && tRNS) {
         if (!cmap) {
                 /* Case 1: make fully transparent RGBA image */
             L_INFO("transparency, 1 spp, no colormap, no transparency array: "
-                   "convention is fully transparent image\n", procName);
-            L_INFO("converting (fully transparent 1 spp) ==> RGBA\n", procName);
+                   "convention is fully transparent image\n", __func__);
+            L_INFO("converting (fully transparent 1 spp) ==> RGBA\n", __func__);
             pixDestroy(&pix);
             pix = pixCreate(w, h, 32);  /* init to alpha = 0 (transparent) */
             pixSetSpp(pix, 4);
         } else {
-            L_INFO("converting (cmap + alpha) ==> RGBA\n", procName);
+            L_INFO("converting (cmap + alpha) ==> RGBA\n", __func__);
 
                 /* Grab the transparency array */
             png_get_tRNS(png_ptr, info_ptr, &trans, &num_trans, NULL);
@@ -363,7 +366,7 @@ PIXCMAP     *cmap;
                 pixDestroy(&pix);
                 png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
                 return (PIX *)ERROR_PTR("cmap, tRNS, but no transparency array",
-                                        procName, NULL);
+                                        __func__, NULL);
             }
 
                 /* Save the cmap and destroy the pix */
@@ -395,10 +398,10 @@ PIXCMAP     *cmap;
                 /* Extract the data and convert to RGBA */
             if (d == 1) {
                     /* Case 2: 1 bpp with transparency (usually) behind white */
-                L_INFO("converting 1 bpp cmap with alpha ==> RGBA\n", procName);
+                L_INFO("converting 1 bpp cmap with alpha ==> RGBA\n", __func__);
                 if (num_trans == 1)
                     L_INFO("num_trans = 1; second color opaque by default\n",
-                           procName);
+                           __func__);
                 for (i = 0; i < h; i++) {
                     ppixel = data + i * wpl;
                     rowptr = row_pointers[i];
@@ -414,9 +417,49 @@ PIXCMAP     *cmap;
                         }
                     }
                 }
+            } else if (d == 2) {
+                    /* Case 3: 2 bpp with cmap and associated transparency */
+                L_INFO("converting 2 bpp cmap with alpha ==> RGBA\n", __func__);
+                for (i = 0; i < h; i++) {
+                    ppixel = data + i * wpl;
+                    rowptr = row_pointers[i];
+                    for (j = 0, index = 0; j < rowbytes; j++) {
+                        byte = rowptr[j];
+                        for (k = 0; k < 4 && index < w; k++, index++) {
+                            bival = (byte >> 2 * (3 - k)) & 3;
+                            pixcmapGetColor(cmap, bival, &rval, &gval, &bval);
+                            composeRGBPixel(rval, gval, bval, ppixel);
+                                /* Assume missing entries to be 255 (opaque)
+                                 * according to the spec:
+                                 * http://www.w3.org/TR/PNG/#11tRNS */
+                            SET_DATA_BYTE(ppixel, L_ALPHA_CHANNEL,
+                                bival < num_trans ? trans[bival] : 255);
+                            ppixel++;
+                        }
+                    }
+                }
+            } else if (d == 4) {
+                    /* Case 4: 4 bpp with cmap and associated transparency */
+                L_INFO("converting 4 bpp cmap with alpha ==> RGBA\n", __func__);
+                for (i = 0; i < h; i++) {
+                    ppixel = data + i * wpl;
+                    rowptr = row_pointers[i];
+                    for (j = 0, index = 0; j < rowbytes; j++) {
+                        byte = rowptr[j];
+                        for (k = 0; k < 2 && index < w; k++, index++) {
+                            quadval = (byte >> 4 * (1 - k)) & 0xf;
+                            pixcmapGetColor(cmap, quadval, &rval, &gval, &bval);
+                            composeRGBPixel(rval, gval, bval, ppixel);
+                                /* Assume missing entries to be 255 (opaque) */
+                            SET_DATA_BYTE(ppixel, L_ALPHA_CHANNEL,
+                                quadval < num_trans ? trans[quadval] : 255);
+                            ppixel++;
+                        }
+                    }
+                }
             } else if (d == 8) {
-                    /* Case 3: 8 bpp with cmap and associated transparency */
-                L_INFO("converting 8 bpp cmap with alpha ==> RGBA\n", procName);
+                    /* Case 5: 8 bpp with cmap and associated transparency */
+                L_INFO("converting 8 bpp cmap with alpha ==> RGBA\n", __func__);
                 for (i = 0; i < h; i++) {
                     ppixel = data + i * wpl;
                     rowptr = row_pointers[i];
@@ -424,9 +467,7 @@ PIXCMAP     *cmap;
                         index = rowptr[j];
                         pixcmapGetColor(cmap, index, &rval, &gval, &bval);
                         composeRGBPixel(rval, gval, bval, ppixel);
-                            /* Assume missing entries to be 255 (opaque)
-                             * according to the spec:
-                             * http://www.w3.org/TR/PNG/#11tRNS */
+                            /* Assume missing entries to be 255 (opaque) */
                         SET_DATA_BYTE(ppixel, L_ALPHA_CHANNEL,
                                       index < num_trans ? trans[index] : 255);
                         ppixel++;
@@ -434,7 +475,7 @@ PIXCMAP     *cmap;
                 }
             } else {
                 L_ERROR("spp == 1, cmap, trans array, invalid depth: %d\n",
-                        procName, d);
+                        __func__, d);
             }
             pixcmapDestroy(&cmap);
         }
@@ -474,7 +515,7 @@ PIXCMAP     *cmap;
         if (!cmap) {
             pixInvert(pix, pix);
         } else {
-            L_INFO("removing opaque cmap from 1 bpp\n", procName);
+            L_INFO("removing opaque cmap from 1 bpp\n", __func__);
             pix1 = pixRemoveColormap(pix, REMOVE_CMAP_BASED_ON_SRC);
             pixDestroy(&pix);
             pix = pix1;
@@ -498,7 +539,7 @@ PIXCMAP     *cmap;
         pixcmapIsValid(cmap, pix, &valid);
         if (!valid) {
             pixDestroy(&pix);
-            return (PIX *)ERROR_PTR("colormap is not valid", procName, NULL);
+            return (PIX *)ERROR_PTR("colormap is not valid", __func__, NULL);
         }
     }
 
@@ -540,17 +581,15 @@ readHeaderPng(const char *filename,
 l_int32  ret;
 FILE    *fp;
 
-    PROCNAME("readHeaderPng");
-
     if (pw) *pw = 0;
     if (ph) *ph = 0;
     if (pbps) *pbps = 0;
     if (pspp) *pspp = 0;
     if (piscmap) *piscmap = 0;
     if (!filename)
-        return ERROR_INT("filename not defined", procName, 1);
+        return ERROR_INT("filename not defined", __func__, 1);
     if ((fp = fopenReadStream(filename)) == NULL)
-        return ERROR_INT("image file not found", procName, 1);
+        return ERROR_INT_1("image file not found", filename, __func__, 1);
     ret = freadHeaderPng(fp, pw, ph, pbps, pspp, piscmap);
     fclose(fp);
     return ret;
@@ -584,21 +623,19 @@ freadHeaderPng(FILE     *fp,
 l_int32  nbytes, ret;
 l_uint8  data[40];
 
-    PROCNAME("freadHeaderPng");
-
     if (pw) *pw = 0;
     if (ph) *ph = 0;
     if (pbps) *pbps = 0;
     if (pspp) *pspp = 0;
     if (piscmap) *piscmap = 0;
     if (!fp)
-        return ERROR_INT("stream not defined", procName, 1);
+        return ERROR_INT("stream not defined", __func__, 1);
 
     nbytes = fnbytesInFile(fp);
     if (nbytes < 40)
-        return ERROR_INT("file too small to be png", procName, 1);
+        return ERROR_INT("file too small to be png", __func__, 1);
     if (fread(data, 1, 40, fp) != 40)
-        return ERROR_INT("error reading data", procName, 1);
+        return ERROR_INT("error reading data", __func__, 1);
     ret = readHeaderMemPng(data, 40, pw, ph, pbps, pspp, piscmap);
     return ret;
 }
@@ -644,30 +681,28 @@ l_uint16  *pshort;
 l_int32    colortype, w, h, bps, spp;
 l_uint32  *pword;
 
-    PROCNAME("readHeaderMemPng");
-
     if (pw) *pw = 0;
     if (ph) *ph = 0;
     if (pbps) *pbps = 0;
     if (pspp) *pspp = 0;
     if (piscmap) *piscmap = 0;
     if (!data)
-        return ERROR_INT("data not defined", procName, 1);
+        return ERROR_INT("data not defined", __func__, 1);
     if (size < 40)
-        return ERROR_INT("size < 40", procName, 1);
+        return ERROR_INT("size < 40", __func__, 1);
 
         /* Check password */
     if (data[0] != 137 || data[1] != 80 || data[2] != 78 ||
         data[3] != 71 || data[4] != 13 || data[5] != 10 ||
         data[6] != 26 || data[7] != 10)
-        return ERROR_INT("not a valid png file", procName, 1);
+        return ERROR_INT("not a valid png file", __func__, 1);
 
     pword = (l_uint32 *)data;
     pshort = (l_uint16 *)data;
     w = convertOnLittleEnd32(pword[4]);
     h = convertOnLittleEnd32(pword[5]);
     if (w < 1 || h < 1)
-        return ERROR_INT("invalid w or h", procName, 1);
+        return ERROR_INT("invalid w or h", __func__, 1);
     twobytes = convertOnLittleEnd16(pshort[12]); /* contains depth/sample  */
                                                  /* and the color type     */
     colortype = twobytes & 0xff;  /* color type */
@@ -678,7 +713,7 @@ l_uint32  *pword;
          * but only if the tRNS chunk exists, which we can't tell
          * by this simple parser.*/
     if (colortype == 4)
-        L_INFO("gray + alpha: will extract as RGBA (spp = 4)\n", procName);
+        L_INFO("gray + alpha: will extract as RGBA (spp = 4)\n", __func__);
 
     if (colortype == 2) {  /* RGB */
         spp = 3;
@@ -691,7 +726,7 @@ l_uint32  *pword;
         spp = 1;
     }
     if (bps < 1 || bps > 16) {
-        L_ERROR("invalid bps = %d\n", procName, bps);
+        L_ERROR("invalid bps = %d\n", __func__, bps);
         return 1;
     }
     if (pw) *pw = w;
@@ -733,29 +768,27 @@ png_uint_32  xres, yres;
 png_structp  png_ptr;
 png_infop    info_ptr;
 
-    PROCNAME("fgetPngResolution");
-
     if (pxres) *pxres = 0;
     if (pyres) *pyres = 0;
     if (!fp)
-        return ERROR_INT("stream not opened", procName, 1);
+        return ERROR_INT("stream not opened", __func__, 1);
     if (!pxres || !pyres)
-        return ERROR_INT("&xres and &yres not both defined", procName, 1);
+        return ERROR_INT("&xres and &yres not both defined", __func__, 1);
 
        /* Make the two required structs */
     if ((png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING,
                    (png_voidp)NULL, NULL, NULL)) == NULL)
-        return ERROR_INT("png_ptr not made", procName, 1);
+        return ERROR_INT("png_ptr not made", __func__, 1);
     if ((info_ptr = png_create_info_struct(png_ptr)) == NULL) {
         png_destroy_read_struct(&png_ptr, (png_infopp)NULL, (png_infopp)NULL);
-        return ERROR_INT("info_ptr not made", procName, 1);
+        return ERROR_INT("info_ptr not made", __func__, 1);
     }
 
         /* Set up png setjmp error handling.
          * Without this, an error calls exit. */
     if (setjmp(png_jmpbuf(png_ptr))) {
         png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp)NULL);
-        return ERROR_INT("internal png error", procName, 1);
+        return ERROR_INT("internal png error", __func__, 1);
     }
 
         /* Read the metadata */
@@ -788,19 +821,17 @@ isPngInterlaced(const char *filename,
 l_uint8  buf[32];
 FILE    *fp;
 
-    PROCNAME("isPngInterlaced");
-
     if (!pinterlaced)
-        return ERROR_INT("&interlaced not defined", procName, 1);
+        return ERROR_INT("&interlaced not defined", __func__, 1);
     *pinterlaced = 0;
     if (!filename)
-        return ERROR_INT("filename not defined", procName, 1);
+        return ERROR_INT("filename not defined", __func__, 1);
 
     if ((fp = fopenReadStream(filename)) == NULL)
-        return ERROR_INT("stream not opened", procName, 1);
+        return ERROR_INT_1("stream not opened", filename, __func__, 1);
     if (fread(buf, 1, 32, fp) != 32) {
         fclose(fp);
-        return ERROR_INT("data not read", procName, 1);
+        return ERROR_INT_1("data not read", filename, __func__, 1);
     }
     fclose(fp);
 
@@ -837,22 +868,20 @@ png_colorp   palette;
 png_structp  png_ptr;
 png_infop    info_ptr;
 
-    PROCNAME("fgetPngColormapInfo");
-
     if (pcmap) *pcmap = NULL;
     if (ptransparency) *ptransparency = 0;
     if (!pcmap && !ptransparency)
-        return ERROR_INT("no output defined", procName, 1);
+        return ERROR_INT("no output defined", __func__, 1);
     if (!fp)
-        return ERROR_INT("stream not opened", procName, 1);
+        return ERROR_INT("stream not opened", __func__, 1);
 
        /* Make the two required structs */
     if ((png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING,
                    (png_voidp)NULL, NULL, NULL)) == NULL)
-        return ERROR_INT("png_ptr not made", procName, 1);
+        return ERROR_INT("png_ptr not made", __func__, 1);
     if ((info_ptr = png_create_info_struct(png_ptr)) == NULL) {
         png_destroy_read_struct(&png_ptr, (png_infopp)NULL, (png_infopp)NULL);
-        return ERROR_INT("info_ptr not made", procName, 1);
+        return ERROR_INT("info_ptr not made", __func__, 1);
     }
 
         /* Set up png setjmp error handling.
@@ -860,7 +889,7 @@ png_infop    info_ptr;
     if (setjmp(png_jmpbuf(png_ptr))) {
         png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
         if (pcmap && *pcmap) pixcmapDestroy(pcmap);
-        return ERROR_INT("internal png error", procName, 1);
+        return ERROR_INT("internal png error", __func__, 1);
     }
 
         /* Read the metadata and check if there is a colormap */
@@ -899,7 +928,7 @@ png_infop    info_ptr;
                 }
             }
         } else {
-            L_ERROR("transparency array not returned\n", procName);
+            L_ERROR("transparency array not returned\n", __func__);
         }
     }
 
@@ -933,19 +962,17 @@ pixWritePng(const char  *filename,
 {
 FILE  *fp;
 
-    PROCNAME("pixWritePng");
-
     if (!pix)
-        return ERROR_INT("pix not defined", procName, 1);
+        return ERROR_INT("pix not defined", __func__, 1);
     if (!filename)
-        return ERROR_INT("filename not defined", procName, 1);
+        return ERROR_INT("filename not defined", __func__, 1);
 
     if ((fp = fopenWriteStream(filename, "wb+")) == NULL)
-        return ERROR_INT("stream not opened", procName, 1);
+        return ERROR_INT_1("stream not opened", filename, __func__, 1);
 
     if (pixWriteStreamPng(fp, pix, gamma)) {
         fclose(fp);
-        return ERROR_INT("pix not written to stream", procName, 1);
+        return ERROR_INT_1("pix not written to stream", filename, __func__, 1);
     }
 
     fclose(fp);
@@ -1007,15 +1034,10 @@ FILE  *fp;
  *          and 32.  However, it is possible, and in some cases desirable,
  *          to write out a png file using an rgb pix that has 24 bpp.
  *          For example, the open source xpdf SplashBitmap class generates
- *          24 bpp rgb images.  Consequently, we enable writing 24 bpp pix.
- *          To generate such a pix, you can make a 24 bpp pix without data
- *          and assign the data array to the pix; e.g.,
- *              pix = pixCreateHeader(w, h, 24);
- *              pixSetData(pix, rgbdata);
- *          See pixConvert32To24() for an example, where we get rgbdata
- *          from the 32 bpp pix.  Caution: do not call pixSetPadBits(),
- *          because the alignment is wrong and you may erase part of the
- *          last pixel on each line.
+ *          24 bpp rgb images.  Consequently, we enable writing 24 bpp pix
+ *          without converting it to 32 bpp first.  Caution: do not call
+ *          pixSetPadBits(), because the alignment is wrong and you may
+ *          erase part of the last pixel on each line.
  *      (8) If the pix has a colormap, it is written to file.  In most
  *          situations, the alpha component is 255 for each colormap entry,
  *          which is opaque and indicates that it should be ignored.
@@ -1032,7 +1054,8 @@ pixWriteStreamPng(FILE      *fp,
                   l_float32  gamma)
 {
 char         commentstring[] = "Comment";
-l_int32      i, j, k, wpl, d, spp, cmflag, opaque, ncolors, compval, valid;
+l_int32      i, j, k, wpl, d, spp, compval, valid;
+l_int32      cmflag, opaque, max_trans, ncolors;
 l_int32     *rmap, *gmap, *bmap, *amap;
 l_uint32    *data, *ppixel;
 png_byte     bit_depth, color_type;
@@ -1048,12 +1071,10 @@ PIX         *pix1;
 PIXCMAP     *cmap;
 char        *text;
 
-    PROCNAME("pixWriteStreamPng");
-
     if (!fp)
-        return ERROR_INT("stream not open", procName, 1);
+        return ERROR_INT("stream not open", __func__, 1);
     if (!pix)
-        return ERROR_INT("pix not defined", procName, 1);
+        return ERROR_INT("pix not defined", __func__, 1);
 
     w = pixGetWidth(pix);
     h = pixGetHeight(pix);
@@ -1065,11 +1086,13 @@ char        *text;
         cmflag = 1;
         pixcmapIsValid(cmap, pix, &valid);
         if (!valid)
-            return ERROR_INT("colormap is not valid", procName, 1);
+            return ERROR_INT("colormap is not valid", __func__, 1);
     } else {
         cmflag = 0;
     }
-    pixSetPadBits(pix, 0);
+
+        /* Do not set pad bits for d = 24 ! */
+    if (d != 24) pixSetPadBits(pix, 0);
 
         /* Set the color type and bit depth. */
     if (d == 32 && spp == 4) {
@@ -1095,10 +1118,10 @@ char        *text;
         /* Allocate the 2 png data structures */
     if ((png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING,
                    (png_voidp)NULL, NULL, NULL)) == NULL)
-        return ERROR_INT("png_ptr not made", procName, 1);
+        return ERROR_INT("png_ptr not made", __func__, 1);
     if ((info_ptr = png_create_info_struct(png_ptr)) == NULL) {
         png_destroy_write_struct(&png_ptr, (png_infopp)NULL);
-        return ERROR_INT("info_ptr not made", procName, 1);
+        return ERROR_INT("info_ptr not made", __func__, 1);
     }
 
         /* Set up png setjmp error handling */
@@ -1108,7 +1131,7 @@ char        *text;
         png_destroy_write_struct(&png_ptr, &info_ptr);
         LEPT_FREE(row_pointers);
         pixDestroy(&pix1);
-        return ERROR_INT("internal png error", procName, 1);
+        return ERROR_INT("internal png error", __func__, 1);
     }
 
     png_init_io(png_ptr, fp);
@@ -1153,10 +1176,17 @@ char        *text;
         png_set_PLTE(png_ptr, info_ptr, palette, (int)ncolors);
         LEPT_FREE(palette);
 
+            /* Add the tRNS chunk.  If the non-opaque colors are listed
+             * first in the colormap, as in the spec, we can use that in
+             * the 4th arg of png_set_tRNS.  Otherwise, transparency will
+             * be lost for some colors.  To prevent that, see the comments
+             * in pixcmapNonOpaqueColorsInfo(). */
         pixcmapIsOpaque(cmap, &opaque);
-        if (!opaque)  /* alpha channel has some transparency; assume valid */
+        if (!opaque) {  /* alpha channel has some transparency; assume valid */
+            pixcmapNonOpaqueColorsInfo(cmap, NULL, &max_trans, NULL);
             png_set_tRNS(png_ptr, info_ptr, (png_bytep)alpha,
-                         (int)ncolors, NULL);
+                         max_trans + 1, NULL);
+        }
     }
 
         /* 0.4545 is treated as the default by some image
@@ -1197,7 +1227,7 @@ char        *text;
         }
         if (!pix1) {
             png_destroy_write_struct(&png_ptr, &info_ptr);
-            return ERROR_INT("pix1 not made", procName, 1);
+            return ERROR_INT("pix1 not made", __func__, 1);
         }
 
             /* Make and assign array of image row pointers */
@@ -1217,16 +1247,15 @@ char        *text;
         return 0;
     }
 
-        /* For rgb, compose and write a row at a time */
+        /* For rgb and rgba, compose and write a row at a time */
     data = pixGetData(pix);
     wpl = pixGetWpl(pix);
-    if (d == 24) {  /* See note 7 above: special case of 24 bpp rgb */
+    if (d == 24) {  /* See note 7 above */
         for (i = 0; i < h; i++) {
             ppixel = data + i * wpl;
             png_write_rows(png_ptr, (png_bytepp)&ppixel, 1);
         }
-    } else {  /* 32 bpp rgb and rgba.  Write out the alpha channel if either
-             * the pix has 4 spp or writing it is requested anyway */
+    } else {  /* 32 bpp rgb and rgba.  If spp = 4, write the alpha channel */
         rowbuffer = (png_bytep)LEPT_CALLOC(w, 4);
         for (i = 0; i < h; i++) {
             ppixel = data + i * wpl;
@@ -1275,12 +1304,10 @@ l_ok
 pixSetZlibCompression(PIX     *pix,
                       l_int32  compval)
 {
-    PROCNAME("pixSetZlibCompression");
-
     if (!pix)
-        return ERROR_INT("pix not defined", procName, 1);
+        return ERROR_INT("pix not defined", __func__, 1);
     if (compval < 0 || compval > 9) {
-        L_ERROR("Invalid zlib comp val; using default\n", procName);
+        L_ERROR("Invalid zlib comp val; using default\n", __func__);
         compval = Z_DEFAULT_COMPRESSION;
     }
     pixSetSpecial(pix, 10 + compval);  /* valid range [10 ... 19] */
@@ -1546,8 +1573,8 @@ pixReadMemPng(const l_uint8  *filedata,
               size_t          filesize)
 {
 l_uint8      byte;
-l_int32      i, j, k, index, ncolors, bitval, rval, gval, bval, valid;
-l_int32      wpl, d, spp, cindex, tRNS;
+l_int32      i, j, k, index, ncolors, rval, gval, bval, valid;
+l_int32      wpl, d, spp, cindex, bitval, bival, quadval, tRNS;
 l_uint32     png_transforms;
 l_uint32    *data, *line, *ppixel;
 int          num_palette, num_text, num_trans;
@@ -1563,12 +1590,10 @@ MEMIODATA    state;
 PIX         *pix, *pix1;
 PIXCMAP     *cmap;
 
-    PROCNAME("pixReadMemPng");
-
     if (!filedata)
-        return (PIX *)ERROR_PTR("filedata not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("filedata not defined", __func__, NULL);
     if (filesize < 1)
-        return (PIX *)ERROR_PTR("invalid filesize", procName, NULL);
+        return (PIX *)ERROR_PTR("invalid filesize", __func__, NULL);
 
     state.m_Next = 0;
     state.m_Count = 0;
@@ -1580,22 +1605,22 @@ PIXCMAP     *cmap;
         /* Allocate the 3 data structures */
     if ((png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING,
                    (png_voidp)NULL, NULL, NULL)) == NULL)
-        return (PIX *)ERROR_PTR("png_ptr not made", procName, NULL);
+        return (PIX *)ERROR_PTR("png_ptr not made", __func__, NULL);
 
     if ((info_ptr = png_create_info_struct(png_ptr)) == NULL) {
         png_destroy_read_struct(&png_ptr, (png_infopp)NULL, (png_infopp)NULL);
-        return (PIX *)ERROR_PTR("info_ptr not made", procName, NULL);
+        return (PIX *)ERROR_PTR("info_ptr not made", __func__, NULL);
     }
 
     if ((end_info = png_create_info_struct(png_ptr)) == NULL) {
         png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp)NULL);
-        return (PIX *)ERROR_PTR("end_info not made", procName, NULL);
+        return (PIX *)ERROR_PTR("end_info not made", __func__, NULL);
     }
 
         /* Set up png setjmp error handling */
     if (setjmp(png_jmpbuf(png_ptr))) {
         png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
-        return (PIX *)ERROR_PTR("internal png error", procName, NULL);
+        return (PIX *)ERROR_PTR("internal png error", __func__, NULL);
     }
 
     png_set_read_fn(png_ptr, &state, memio_png_read_data);
@@ -1611,7 +1636,7 @@ PIXCMAP     *cmap;
         png_transforms = PNG_TRANSFORM_STRIP_16;
     } else {
         png_transforms = PNG_TRANSFORM_IDENTITY;
-        L_INFO("not stripping 16 --> 8 in png reading\n", procName);
+        L_INFO("not stripping 16 --> 8 in png reading\n", __func__);
     }
 
         /* Read it */
@@ -1638,7 +1663,7 @@ PIXCMAP     *cmap;
         lept_stderr("Help: spp = 3 and depth = %d != 8\n!!", bit_depth);
         png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
         return (PIX *)ERROR_PTR("not implemented for this depth",
-            procName, NULL);
+            __func__, NULL);
     }
 
     cmap = NULL;
@@ -1658,7 +1683,7 @@ PIXCMAP     *cmap;
         pixcmapDestroy(&cmap);
         png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
         pixcmapDestroy(&cmap);
-        return (PIX *)ERROR_PTR("pix not made", procName, NULL);
+        return (PIX *)ERROR_PTR("pix not made", __func__, NULL);
     }
     pixSetInputFormat(pix, IFF_PNG);
     wpl = pixGetWpl(pix);
@@ -1666,7 +1691,7 @@ PIXCMAP     *cmap;
     pixSetSpp(pix, spp);
     if (pixSetColormap(pix, cmap)) {
         pixDestroy(&pix);
-        return (PIX *)ERROR_PTR("invalid colormap", procName, NULL);
+        return (PIX *)ERROR_PTR("invalid colormap", __func__, NULL);
     }
 
     if (spp == 1 && !tRNS) {  /* copy straight from buffer to pix */
@@ -1678,7 +1703,7 @@ PIXCMAP     *cmap;
             }
         }
     } else if (spp == 2) {  /* grayscale + alpha; convert to RGBA */
-        L_INFO("converting (gray + alpha) ==> RGBA\n", procName);
+        L_INFO("converting (gray + alpha) ==> RGBA\n", __func__);
         for (i = 0; i < h; i++) {
             ppixel = data + i * wpl;
             rowptr = row_pointers[i];
@@ -1710,19 +1735,21 @@ PIXCMAP     *cmap;
         /* Special spp == 1 cases with transparency:
          *    (1) 8 bpp without colormap; assume full transparency
          *    (2) 1 bpp with colormap + trans array (for alpha)
-         *    (3) 8 bpp with colormap + trans array (for alpha)
+         *    (3) 2 bpp with colormap + trans array (for alpha)
+         *    (4) 4 bpp with colormap + trans array (for alpha)
+         *    (5) 8 bpp with colormap + trans array (for alpha)
          * These all require converting to RGBA */
     if (spp == 1 && tRNS) {
         if (!cmap) {
                 /* Case 1: make fully transparent RGBA image */
             L_INFO("transparency, 1 spp, no colormap, no transparency array: "
-                   "convention is fully transparent image\n", procName);
-            L_INFO("converting (fully transparent 1 spp) ==> RGBA\n", procName);
+                   "convention is fully transparent image\n", __func__);
+            L_INFO("converting (fully transparent 1 spp) ==> RGBA\n", __func__);
             pixDestroy(&pix);
             pix = pixCreate(w, h, 32);  /* init to alpha = 0 (transparent) */
             pixSetSpp(pix, 4);
         } else {
-            L_INFO("converting (cmap + alpha) ==> RGBA\n", procName);
+            L_INFO("converting (cmap + alpha) ==> RGBA\n", __func__);
 
                 /* Grab the transparency array */
             png_get_tRNS(png_ptr, info_ptr, &trans, &num_trans, NULL);
@@ -1730,7 +1757,7 @@ PIXCMAP     *cmap;
                 pixDestroy(&pix);
                 png_destroy_read_struct(&png_ptr, &info_ptr, &end_info);
                 return (PIX *)ERROR_PTR("cmap, tRNS, but no transparency array",
-                                        procName, NULL);
+                                        __func__, NULL);
             }
 
                 /* Save the cmap and destroy the pix */
@@ -1762,10 +1789,10 @@ PIXCMAP     *cmap;
                 /* Extract the data and convert to RGBA */
             if (d == 1) {
                     /* Case 2: 1 bpp with transparency (usually) behind white */
-                L_INFO("converting 1 bpp cmap with alpha ==> RGBA\n", procName);
+                L_INFO("converting 1 bpp cmap with alpha ==> RGBA\n", __func__);
                 if (num_trans == 1)
                     L_INFO("num_trans = 1; second color opaque by default\n",
-                           procName);
+                           __func__);
                 for (i = 0; i < h; i++) {
                     ppixel = data + i * wpl;
                     rowptr = row_pointers[i];
@@ -1781,9 +1808,49 @@ PIXCMAP     *cmap;
                         }
                     }
                 }
+            } else if (d == 2) {
+                    /* Case 3: 2 bpp with cmap and associated transparency */
+                L_INFO("converting 2 bpp cmap with alpha ==> RGBA\n", __func__);
+                for (i = 0; i < h; i++) {
+                    ppixel = data + i * wpl;
+                    rowptr = row_pointers[i];
+                    for (j = 0, index = 0; j < rowbytes; j++) {
+                        byte = rowptr[j];
+                        for (k = 0; k < 4 && index < w; k++, index++) {
+                            bival = (byte >> 2 * (3 - k)) & 3;
+                            pixcmapGetColor(cmap, bival, &rval, &gval, &bval);
+                            composeRGBPixel(rval, gval, bval, ppixel);
+                                /* Assume missing entries to be 255 (opaque)
+                                 * according to the spec:
+                                 * http://www.w3.org/TR/PNG/#11tRNS */
+                            SET_DATA_BYTE(ppixel, L_ALPHA_CHANNEL,
+                                bival < num_trans ? trans[bival] : 255);
+                            ppixel++;
+                        }
+                    }
+                }
+            } else if (d == 4) {
+                    /* Case 4: 4 bpp with cmap and associated transparency */
+                L_INFO("converting 4 bpp cmap with alpha ==> RGBA\n", __func__);
+                for (i = 0; i < h; i++) {
+                    ppixel = data + i * wpl;
+                    rowptr = row_pointers[i];
+                    for (j = 0, index = 0; j < rowbytes; j++) {
+                        byte = rowptr[j];
+                        for (k = 0; k < 2 && index < w; k++, index++) {
+                            quadval = (byte >> 4 * (1 - k)) & 0xf;
+                            pixcmapGetColor(cmap, quadval, &rval, &gval, &bval);
+                            composeRGBPixel(rval, gval, bval, ppixel);
+                                /* Assume missing entries to be 255 (opaque) */
+                            SET_DATA_BYTE(ppixel, L_ALPHA_CHANNEL,
+                                quadval < num_trans ? trans[quadval] : 255);
+                            ppixel++;
+                        }
+                    }
+                }
             } else if (d == 8) {
-                    /* Case 3: 8 bpp with cmap and associated transparency */
-                L_INFO("converting 8 bpp cmap with alpha ==> RGBA\n", procName);
+                    /* Case 5: 8 bpp with cmap and associated transparency */
+                L_INFO("converting 8 bpp cmap with alpha ==> RGBA\n", __func__);
                 for (i = 0; i < h; i++) {
                     ppixel = data + i * wpl;
                     rowptr = row_pointers[i];
@@ -1801,7 +1868,7 @@ PIXCMAP     *cmap;
                 }
             } else {
                 L_ERROR("spp == 1, cmap, trans array, invalid depth: %d\n",
-                        procName, d);
+                        __func__, d);
             }
             pixcmapDestroy(&cmap);
         }
@@ -1864,7 +1931,7 @@ PIXCMAP     *cmap;
         pixcmapIsValid(cmap, pix, &valid);
         if (!valid) {
             pixDestroy(&pix);
-            return (PIX *)ERROR_PTR("colormap is not valid", procName, NULL);
+            return (PIX *)ERROR_PTR("colormap is not valid", __func__, NULL);
         }
     }
 
@@ -1912,16 +1979,14 @@ PIXCMAP     *cmap;
 char        *text;
 MEMIODATA    state;
 
-    PROCNAME("pixWriteMemPng");
-
     if (pfiledata) *pfiledata = NULL;
     if (pfilesize) *pfilesize = 0;
     if (!pfiledata)
-        return ERROR_INT("&filedata not defined", procName, 1);
+        return ERROR_INT("&filedata not defined", __func__, 1);
     if (!pfilesize)
-        return ERROR_INT("&filesize not defined", procName, 1);
+        return ERROR_INT("&filesize not defined", __func__, 1);
     if (!pix)
-        return ERROR_INT("pix not defined", procName, 1);
+        return ERROR_INT("pix not defined", __func__, 1);
 
     state.m_Buffer = 0;
     state.m_Size = 0;
@@ -1939,12 +2004,13 @@ MEMIODATA    state;
         cmflag = 1;
         pixcmapIsValid(cmap, pix, &valid);
         if (!valid)
-            return ERROR_INT("colormap is not valid", procName, 1);
+            return ERROR_INT("colormap is not valid", __func__, 1);
     } else {
         cmflag = 0;
     }
 
-    pixSetPadBits(pix, 0);
+        /* Do not set pad bits for d = 24 ! */
+    if (d != 24) pixSetPadBits(pix, 0);
 
         /* Set the color type and bit depth. */
     if (d == 32 && spp == 4) {
@@ -1970,11 +2036,11 @@ MEMIODATA    state;
         /* Allocate the 2 data structures */
     if ((png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING,
                    (png_voidp)NULL, NULL, NULL)) == NULL)
-        return ERROR_INT("png_ptr not made", procName, 1);
+        return ERROR_INT("png_ptr not made", __func__, 1);
 
     if ((info_ptr = png_create_info_struct(png_ptr)) == NULL) {
         png_destroy_write_struct(&png_ptr, (png_infopp)NULL);
-        return ERROR_INT("info_ptr not made", procName, 1);
+        return ERROR_INT("info_ptr not made", __func__, 1);
     }
 
         /* Set up png setjmp error handling */
@@ -1982,7 +2048,7 @@ MEMIODATA    state;
     if (setjmp(png_jmpbuf(png_ptr))) {
         png_destroy_write_struct(&png_ptr, &info_ptr);
         pixDestroy(&pix1);
-        return ERROR_INT("internal png error", procName, 1);
+        return ERROR_INT("internal png error", __func__, 1);
     }
 
     png_set_write_fn(png_ptr, &state, memio_png_write_data,
@@ -2073,7 +2139,7 @@ MEMIODATA    state;
         if (!pix1) {
             png_destroy_write_struct(&png_ptr, &info_ptr);
             memio_free(&state);
-            return ERROR_INT("pix1 not made", procName, 1);
+            return ERROR_INT("pix1 not made", __func__, 1);
         }
 
             /* Transfer the data */
@@ -2093,16 +2159,15 @@ MEMIODATA    state;
         return 0;
     }
 
-        /* For rgb, compose and write a row at a time */
+        /* For rgb and rgba, compose and write a row at a time */
     data = pixGetData(pix);
     wpl = pixGetWpl(pix);
-    if (d == 24) {  /* See note 7 above: special case of 24 bpp rgb */
+    if (d == 24) {  /* See note 7 in pixWriteStreamPng() */
         for (i = 0; i < h; i++) {
             ppixel = data + i * wpl;
             png_write_rows(png_ptr, (png_bytepp)&ppixel, 1);
         }
-    } else {  /* 32 bpp rgb and rgba.  Write out the alpha channel if either
-             * the pix has 4 spp or writing it is requested anyway */
+    } else {  /* 32 bpp rgb and rgba.  If spp = 4, write the alpha channel */
         rowbuffer = (png_bytep)LEPT_CALLOC(w, 4);
         for (i = 0; i < h; i++) {
             ppixel = data + i * wpl;

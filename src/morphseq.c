@@ -146,12 +146,10 @@ PIX     *pix1, *pix2;
 PIXA    *pixa;
 SARRAY  *sa;
 
-    PROCNAME("pixMorphSequence");
-
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
     if (!sequence)
-        return (PIX *)ERROR_PTR("sequence not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("sequence not defined", __func__, NULL);
 
         /* Split sequence into individual operations */
     sa = sarrayCreate(0);
@@ -160,7 +158,7 @@ SARRAY  *sa;
     pdfout = (dispsep < 0) ? 1 : 0;
     if (!morphSequenceVerify(sa)) {
         sarrayDestroy(&sa);
-        return (PIX *)ERROR_PTR("sequence not valid", procName, NULL);
+        return (PIX *)ERROR_PTR("sequence not valid", __func__, NULL);
     }
 
         /* Parse and operate */
@@ -243,8 +241,7 @@ SARRAY  *sa;
     }
 
     if (pdfout) {
-        snprintf(fname, sizeof(fname), "/tmp/lept/seq_output_%d.pdf",
-                 L_ABS(dispsep));
+        snprintf(fname, sizeof(fname), "/tmp/lept/seq_output_%d.pdf", L_ABS(dispsep));
         pixaConvertToPdf(pixa, 0, 1.0, L_FLATE_ENCODE, 0, fname, fname);
         pixaDestroy(&pixa);
     }
@@ -313,12 +310,10 @@ PIX     *pix1, *pix2;
 PIXA    *pixa;
 SARRAY  *sa;
 
-    PROCNAME("pixMorphCompSequence");
-
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
     if (!sequence)
-        return (PIX *)ERROR_PTR("sequence not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("sequence not defined", __func__, NULL);
 
         /* Split sequence into individual operations */
     sa = sarrayCreate(0);
@@ -328,7 +323,7 @@ SARRAY  *sa;
 
     if (!morphSequenceVerify(sa)) {
         sarrayDestroy(&sa);
-        return (PIX *)ERROR_PTR("sequence not valid", procName, NULL);
+        return (PIX *)ERROR_PTR("sequence not valid", __func__, NULL);
     }
 
         /* Parse and operate */
@@ -462,12 +457,10 @@ PIX     *pix1, *pix2;
 PIXA    *pixa;
 SARRAY  *sa;
 
-    PROCNAME("pixMorphSequenceDwa");
-
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
     if (!sequence)
-        return (PIX *)ERROR_PTR("sequence not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("sequence not defined", __func__, NULL);
 
         /* Split sequence into individual operations */
     sa = sarrayCreate(0);
@@ -477,7 +470,7 @@ SARRAY  *sa;
 
     if (!morphSequenceVerify(sa)) {
         sarrayDestroy(&sa);
-        return (PIX *)ERROR_PTR("sequence not valid", procName, NULL);
+        return (PIX *)ERROR_PTR("sequence not valid", __func__, NULL);
     }
 
         /* Parse and operate */
@@ -611,12 +604,10 @@ PIX     *pix1, *pix2;
 PIXA    *pixa;
 SARRAY  *sa;
 
-    PROCNAME("pixMorphCompSequenceDwa");
-
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
     if (!sequence)
-        return (PIX *)ERROR_PTR("sequence not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("sequence not defined", __func__, NULL);
 
         /* Split sequence into individual operations */
     sa = sarrayCreate(0);
@@ -626,7 +617,7 @@ SARRAY  *sa;
 
     if (!morphSequenceVerify(sa)) {
         sarrayDestroy(&sa);
-        return (PIX *)ERROR_PTR("sequence not valid", procName, NULL);
+        return (PIX *)ERROR_PTR("sequence not valid", __func__, NULL);
     }
 
         /* Parse and operate */
@@ -740,15 +731,13 @@ SARRAY  *sa;
 l_int32
 morphSequenceVerify(SARRAY  *sa)
 {
-char    *rawop, *op;
+char    *rawop, *op = NULL;
 l_int32  nops, i, j, nred, fact, valid, w, h, netred, border;
 l_int32  level[4];
 l_int32  intlogbase2[5] = {1, 2, 3, 0, 4};  /* of arg/4 */
 
-    PROCNAME("morphSequenceVerify");
-
     if (!sa)
-        return ERROR_INT("sa not defined", procName, FALSE);
+        return ERROR_INT("sa not defined", __func__, FALSE);
 
     nops = sarrayGetCount(sa);
     valid = TRUE;
@@ -923,12 +912,10 @@ PIX     *pix1, *pix2;
 PIXA    *pixa;
 SARRAY  *sa;
 
-    PROCNAME("pixGrayMorphSequence");
-
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
     if (!sequence)
-        return (PIX *)ERROR_PTR("sequence not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("sequence not defined", __func__, NULL);
 
         /* Split sequence into individual operations */
     sa = sarrayCreate(0);
@@ -990,7 +977,7 @@ SARRAY  *sa;
     }
     if (!valid) {
         sarrayDestroy(&sa);
-        return (PIX *)ERROR_PTR("sequence invalid", procName, NULL);
+        return (PIX *)ERROR_PTR("sequence invalid", __func__, NULL);
     }
 
         /* Parse and operate */
@@ -1126,12 +1113,10 @@ PIX     *pix1, *pix2;
 PIXA    *pixa;
 SARRAY  *sa;
 
-    PROCNAME("pixColorMorphSequence");
-
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
     if (!sequence)
-        return (PIX *)ERROR_PTR("sequence not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("sequence not defined", __func__, NULL);
 
         /* Split sequence into individual operations */
     sa = sarrayCreate(0);
@@ -1175,7 +1160,7 @@ SARRAY  *sa;
     }
     if (!valid) {
         sarrayDestroy(&sa);
-        return (PIX *)ERROR_PTR("sequence invalid", procName, NULL);
+        return (PIX *)ERROR_PTR("sequence invalid", __func__, NULL);
     }
 
         /* Parse and operate */

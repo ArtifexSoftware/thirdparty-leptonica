@@ -65,6 +65,13 @@ typedef unsigned int uintptr_t;
 
 #endif /* _MSC_VER */
 
+#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L) && !defined(__STDC_NO_ATOMICS__)
+#include <stdatomic.h>
+typedef atomic_int l_atomic;
+#else
+typedef int l_atomic;
+#endif
+
 #ifndef LEPT_DLL
   /* Windows specifics */
   #ifdef _WIN32
@@ -84,6 +91,10 @@ typedef unsigned int uintptr_t;
 #ifndef _WIN32  /* non-Windows specifics */
   #include <stdint.h>
 #endif  /* _WIN32 */
+
+#ifdef __APPLE__
+  #include <Availability.h>
+#endif /* __APPLE__ */
 
 typedef intptr_t l_intptr_t;
 typedef uintptr_t l_uintptr_t;
@@ -133,8 +144,8 @@ typedef uintptr_t l_uintptr_t;
 
 
   /*-----------------------------------------------------------------------*
-   * Leptonica supports OpenJPEG 2.0+.  If you have a version of openjpeg  *
-   * (HAVE_LIBJP2K == 1) that is >= 2.0, set the path to the openjpeg.h    *
+   * Leptonica supports OpenJPEG 2.1+.  If you have a version of openjpeg  *
+   * (HAVE_LIBJP2K == 1) that is >= 2.1, set the path to the openjpeg.h    *
    * header in angle brackets here.                                        *
    *-----------------------------------------------------------------------*/
   #define  LIBJP2K_HEADER   <openjpeg-2.3/openjpeg.h>
@@ -162,16 +173,25 @@ typedef uintptr_t l_uintptr_t;
 
 
 /*-------------------------------------------------------------------------*
- * On linux systems, you can do I/O between Pix and memory.  Specifically,
- * you can compress (write compressed data to memory from a Pix) and
- * uncompress (read from compressed data in memory to a Pix).
- * For jpeg, png, jp2k, gif, pnm and bmp, these use the non-posix GNU
- * functions fmemopen() and open_memstream().  These functions are not
- * available on other systems.
- * To use these functions in linux, you must define HAVE_FMEMOPEN to 1.
- * To use them on MacOS, which does not support these functions, set it to 0.
+ * On linux, BSD, macOS (> 10.12), android (sdk >= 23) and iOS(>= 11.0),
+ * you can redirect writing data from a filestream to memory using
+ * open_memstream() and redirect reading data from a filestream to
+ * reading from memory using fmemopen().
+ * Specifically, you can compress (write compressed data to memory
+ * from raster data in a Pix) and uncompress (read from compressed data
+ * in memory to raster data in a Pix).
+ * For png, tiff and webp, data is compressed and uncompressed directly
+ * to memory without the use of the POSIX.1 (2008) functions fmemopen()
+ * and open_memstream().
+ * For jpeg, jp2k, gif, pnm and bmp, these functions are used on systems
+ * that support them, and for those we define HAVE_FMEMOPEN to 1.
  *-------------------------------------------------------------------------*/
-#if !defined(HAVE_CONFIG_H) && !defined(ANDROID_BUILD) && !defined(OS_IOS) && \
+#if !defined(HAVE_CONFIG_H) && \
+    (!defined(ANDROID_BUILD) || __ANDROID_API__ >= 23) && \
+    (!defined(__IPHONE_OS_VERSION_MIN_REQUIRED) || \
+              __IPHONE_OS_VERSION_MIN_REQUIRED >= 110000) && \
+    (!defined(__MAC_OS_X_VERSION_MIN_REQUIRED) || \
+              __MAC_OS_X_VERSION_MIN_REQUIRED > 101200) && \
     !defined(_WIN32)
 #define  HAVE_FMEMOPEN    1
 #endif  /* ! HAVE_CONFIG_H etc. */
@@ -179,10 +199,12 @@ typedef uintptr_t l_uintptr_t;
 /*-------------------------------------------------------------------------*
  * fstatat() is defined by POSIX, but some systems do not support it.      *
  * One example is older macOS systems (pre-10.10).                         *
- * Play it safe and set the default value to 0.                            *
+ * Also, dirfd() is required by fstatat().                                 *
+ * Play it safe and set the default values to 0.                           *
  *-------------------------------------------------------------------------*/
 #if !defined(HAVE_CONFIG_H)
 #define  HAVE_FSTATAT     0
+#define  HAVE_DIRFD       0
 #endif /* ! HAVE_CONFIG_H */
 
 /*--------------------------------------------------------------------*
@@ -198,7 +220,7 @@ typedef uintptr_t l_uintptr_t;
 /*--------------------------------------------------------------------*
  *                          Built-in types                            *
  *--------------------------------------------------------------------*/
-typedef int                     l_ok;    /*!< return type 0 if OK, 1 on error */
+typedef int                     l_ok;       /*!< return 0 if OK, 1 on error */
 typedef signed char             l_int8;     /*!< signed 8-bit value */
 typedef unsigned char           l_uint8;    /*!< unsigned 8-bit value */
 typedef short                   l_int16;    /*!< signed 16-bit value */
@@ -470,19 +492,30 @@ LEPT_DLL extern l_int32  LeptMsgSeverity;
  * <pre>
  *  Usage
  *  =====
- *  Messages are of two types.
+ *  Messages are of three types.
  *
  *  (1) The messages
  *      ERROR_INT(a,b,c)       : returns l_int32
  *      ERROR_FLOAT(a,b,c)     : returns l_float32
  *      ERROR_PTR(a,b,c)       : returns void*
- *  are used to return from functions and take a fixed set of parameters:
+ *  are used to return from functions and take three parameters:
  *      a : <message string>
- *      b : procName
+ *      b : __func__   (the procedure name)
  *      c : <return value from function>
- *  where procName is the name of the local variable naming the function.
+ *  A newline is added by the function after the message.
  *
- *  (2) The purely informational L_* messages
+ *  (2) The messages
+ *      ERROR_INT_1(a,f,b,c)     : returns l_int32
+ *      ERROR_FLOAT_1(a,f,b,c)   : returns l_float32
+ *      ERROR_PTR_1(a,f,b,c)     : returns void*
+ *  are used to return from functions and take four parameters:
+ *      a : <message string>
+ *      f : <second message string> (typically, a filename for an fopen()))
+ *      b : __func__   (the procedure name)
+ *      c : <return value from function>
+ *  A newline is added by the function after the message.
+ *
+ *  (3) The purely informational L_* messages
  *      L_ERROR(a,...)
  *      L_WARNING(a,...)
  *      L_INFO(a,...)
@@ -490,6 +523,8 @@ LEPT_DLL extern l_int32  LeptMsgSeverity;
  *      a  :  <message string> with optional format conversions
  *      v1 : procName    (this must be included as the first vararg)
  *      v2, ... :  optional varargs to match format converters in the message
+ *  Unlike the messages that return a value in (2) and (3) above,
+ *  here a newline needs to be included at the end of the message string.
  *
  *  To return an error from a function that returns void, use:
  *      L_ERROR(<message string>, procName, [...])
@@ -524,6 +559,9 @@ LEPT_DLL extern l_int32  LeptMsgSeverity;
   #define ERROR_INT(a, b, c)            ((l_int32)(c))
   #define ERROR_FLOAT(a, b, c)          ((l_float32)(c))
   #define ERROR_PTR(a, b, c)            ((void *)(c))
+  #define ERROR_INT_1(a, f, b, c)       ((l_int32)(c))
+  #define ERROR_FLOAT_1(a, f, b, c)     ((l_float32)(c))
+  #define ERROR_PTR_1(a, f, b, c)       ((void *)(c))
   #define L_ERROR(a, ...)
   #define L_WARNING(a, ...)
   #define L_INFO(a, ...)
@@ -540,6 +578,16 @@ LEPT_DLL extern l_int32  LeptMsgSeverity;
       IF_SEV(L_SEVERITY_ERROR, returnErrorFloat((a), (b), (c)), (l_float32)(c))
   #define ERROR_PTR(a, b, c) \
       IF_SEV(L_SEVERITY_ERROR, returnErrorPtr((a), (b), (c)), (void *)(c))
+
+  #define ERROR_INT_1(a, f, b, c) \
+      IF_SEV(L_SEVERITY_ERROR, returnErrorInt1((a), (f), (b), (c)), \
+             (l_int32)(c))
+  #define ERROR_FLOAT_1(a, f, b, c) \
+      IF_SEV(L_SEVERITY_ERROR, returnErrorFloat1((a), (f), (b), (c)), \
+             (l_float32)(c))
+  #define ERROR_PTR_1(a, f, b, c) \
+      IF_SEV(L_SEVERITY_ERROR, returnErrorPtr1((a), (f), (b), (c)), \
+             (void *)(c))
 
   #define L_ERROR(a, ...) \
       IF_SEV(L_SEVERITY_ERROR, \

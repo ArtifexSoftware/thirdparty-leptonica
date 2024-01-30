@@ -91,7 +91,7 @@
  *           FILE      *fopenWriteStream()
  *           FILE      *fopenReadFromMemory()
  *
- *       Opening a windows tmpfile for writing
+ *       Opening a Windows tmpfile for writing
  *           FILE      *fopenWriteWinTempfile()
  *
  *       Multi-platform functions that avoid C-runtime boundary crossing
@@ -134,11 +134,11 @@
  *  This is important:
  *  (1) With the exception of splitPathAtDirectory(), splitPathAtExtension()
   *     and genPathname(), all input pathnames must have unix separators.
- *  (2) On Windows, when you specify a read or write to "/tmp/...",
- *      the filename is rewritten to use the Windows temp directory:
- *         /tmp  ==>   [Temp]...    (windows)
+ *  (2) On macOS, iOS and Windows, for read or write to "/tmp/..."
+ *      the filename is rewritten to use the OS specific temp directory:
+ *         /tmp  ==>   [Temp]/...
  *  (3) This filename rewrite, along with the conversion from unix
- *      to windows pathnames, happens in genPathname().
+ *      to OS specific pathnames, happens in genPathname().
  *  (4) Use fopenReadStream() and fopenWriteStream() to open files,
  *      because these use genPathname() to find the platform-dependent
  *      filenames.  Likewise for l_binaryRead() and l_binaryWrite().
@@ -154,13 +154,13 @@
  *      files to default places, both for generating debugging output
  *      and for supporting regression tests.  Applications also need
  *      this ability for debugging.
- *  (8) Why do the pathname rewrite on Windows?
+ *  (8) Why do the pathname rewrite on macOS, iOS and Windows?
  *      The goal is to have the library, and programs using the library,
  *      run on multiple platforms without changes.  The location of
  *      temporary files depends on the platform as well as the user's
- *      configuration.  Temp files on Windows are in some directory
- *      not known a priori.  To make everything work seamlessly on
- *      Windows, every time you open a file for reading or writing,
+ *      configuration.  Temp files on some operating systems are in some
+ *      directory not known a priori.  To make everything work seamlessly on
+ *      any OS, every time you open a file for reading or writing,
  *      use a special function such as fopenReadStream() or
  *      fopenWriteStream(); these call genPathname() to ensure that
  *      if it is a temp file, the correct path is used.  To indicate
@@ -200,7 +200,7 @@
 #include <sys/types.h>
 #endif
 
-#ifdef OS_IOS
+#ifdef __APPLE__
 #include <unistd.h>
 #include <errno.h>
 #endif
@@ -209,6 +209,10 @@
 #include <stddef.h>
 #include "allheaders.h"
 
+#if defined(__APPLE__) || defined(_WIN32)
+/* Rewrite paths starting with /tmp for macOS, iOS and Windows. */
+#define REWRITE_TMP
+#endif
 
 /*--------------------------------------------------------------------*
  *                       Safe string operations                       *
@@ -225,16 +229,14 @@ stringNew(const char  *src)
 l_int32  len;
 char    *dest;
 
-    PROCNAME("stringNew");
-
     if (!src) {
-        L_WARNING("src not defined\n", procName);
+        L_WARNING("src not defined\n", __func__);
         return NULL;
     }
 
     len = strlen(src);
     if ((dest = (char *)LEPT_CALLOC(len + 1, sizeof(char))) == NULL)
-        return (char *)ERROR_PTR("dest not made", procName, NULL);
+        return (char *)ERROR_PTR("dest not made", __func__, NULL);
 
     stringCopy(dest, src, len);
     return dest;
@@ -266,10 +268,8 @@ stringCopy(char        *dest,
 {
 l_int32  i;
 
-    PROCNAME("stringCopy");
-
     if (!dest)
-        return ERROR_INT("dest not defined", procName, 1);
+        return ERROR_INT("dest not defined", __func__, 1);
     if (!src || n < 1)
         return 0;
 
@@ -309,19 +309,17 @@ stringCopySegment(const char  *src,
 char    *dest;
 l_int32  len;
 
-    PROCNAME("stringCopySegment");
-
     if (!src)
-        return (char *)ERROR_PTR("src not defined", procName, NULL);
+        return (char *)ERROR_PTR("src not defined", __func__, NULL);
     len = strlen(src);
     if (start < 0 || start > len - 1)
-        return (char *)ERROR_PTR("invalid start", procName, NULL);
+        return (char *)ERROR_PTR("invalid start", __func__, NULL);
     if (nbytes <= 0)  /* copy to the end */
         nbytes = len - start;
     if (start + nbytes > len)  /* truncate to the end */
         nbytes = len - start;
     if ((dest = (char *)LEPT_CALLOC(nbytes + 1, sizeof(char))) == NULL)
-        return (char *)ERROR_PTR("dest not made", procName, NULL);
+        return (char *)ERROR_PTR("dest not made", __func__, NULL);
     stringCopy(dest, src + start, nbytes);
     return dest;
 }
@@ -345,10 +343,8 @@ l_ok
 stringReplace(char       **pdest,
               const char  *src)
 {
-    PROCNAME("stringReplace");
-
     if (!pdest)
-        return ERROR_INT("pdest not defined", procName, 1);
+        return ERROR_INT("pdest not defined", __func__, 1);
 
     if (*pdest)
         LEPT_FREE(*pdest);
@@ -365,16 +361,17 @@ stringReplace(char       **pdest,
  * \brief   stringLength()
  *
  * \param[in]    src    string can be null or NULL-terminated string
- * \param[in]    size   size of src buffer
- * \return  length of src in bytes.
+ * \param[in]    size   number of bytes to check; e.g., size of src buffer
+ * \return  length of src in bytes; 0 if no bytes are found;
+ *                                  %size on error when NUL byte is not found.
  *
  * <pre>
  * Notes:
- *      (1) Safe implementation of strlen that only checks size bytes
+ *      (1) Safe implementation of strlen that only checks %size bytes
  *          for trailing NUL.
  *      (2) Valid returned string lengths are between 0 and size - 1.
- *          If size bytes are checked without finding a NUL byte, then
- *          an error is indicated by returning size.
+ *          If %size bytes are checked without finding a NUL byte, then
+ *          an error is indicated by returning %size.
  * </pre>
  */
 l_int32
@@ -383,18 +380,19 @@ stringLength(const char  *src,
 {
 l_int32  i;
 
-    PROCNAME("stringLength");
-
     if (!src)
-        return ERROR_INT("src not defined", procName, 0);
-    if (size < 1)
         return 0;
+    if (size < 1)
+        return ERROR_INT("size < 1; too small", __func__, 0);
 
     for (i = 0; i < size; i++) {
         if (src[i] == '\0')
             return i;
     }
-    return size;  /* didn't find a NUL byte */
+
+        /* Didn't find a NUL byte */
+    L_ERROR("NUL byte not found in %d bytes\n", __func__, size);
+    return size;
 }
 
 
@@ -402,7 +400,7 @@ l_int32  i;
  * \brief   stringCat()
  *
  * \param[in]    dest    null-terminated byte buffer
- * \param[in]    size    size of dest
+ * \param[in]    size    size of dest buffer
  * \param[in]    src     string can be null or NULL-terminated string
  * \return  number of bytes added to dest; -1 on error
  *
@@ -427,24 +425,22 @@ stringCat(char        *dest,
 l_int32  i, n;
 l_int32  lendest, lensrc;
 
-    PROCNAME("stringCat");
-
     if (!dest)
-        return ERROR_INT("dest not defined", procName, -1);
+        return ERROR_INT("dest not defined", __func__, -1);
     if (size < 1)
-        return ERROR_INT("size < 1; too small", procName, -1);
+        return ERROR_INT("size < 1; too small", __func__, -1);
     if (!src)
         return 0;
 
     lendest = stringLength(dest, size);
     if (lendest == size)
-        return ERROR_INT("no terminating nul byte", procName, -1);
+        return ERROR_INT("no terminating nul byte", __func__, -1);
     lensrc = stringLength(src, size);
     if (lensrc == 0)
-        return 0;
-    n = (lendest + lensrc > size - 1 ? 0 : lensrc);
-    if (n < 1)
-        return ERROR_INT("dest too small for append", procName, -1);
+        return 0;  /* nothing added to dest */
+    n = (lendest + lensrc > size - 1) ? 0 : lensrc;
+    if (n == 0)
+        return ERROR_INT("dest too small for append", __func__, -1);
 
     for (i = 0; i < n; i++)
         dest[lendest + i] = src[i];
@@ -521,14 +517,12 @@ stringJoin(const char  *src1,
 char    *dest;
 l_int32  srclen1, srclen2, destlen;
 
-    PROCNAME("stringJoin");
-
     srclen1 = (src1) ? strlen(src1) : 0;
     srclen2 = (src2) ? strlen(src2) : 0;
     destlen = srclen1 + srclen2 + 3;
 
     if ((dest = (char *)LEPT_CALLOC(destlen, sizeof(char))) == NULL)
-        return (char *)ERROR_PTR("calloc fail for dest", procName, NULL);
+        return (char *)ERROR_PTR("calloc fail for dest", __func__, NULL);
 
     if (src1)
         stringCat(dest, destlen, src1);
@@ -575,10 +569,8 @@ stringJoinIP(char       **psrc1,
 {
 char  *tmpstr;
 
-    PROCNAME("stringJoinIP");
-
     if (!psrc1)
-        return ERROR_INT("&src1 not defined", procName, 1);
+        return ERROR_INT("&src1 not defined", __func__, 1);
 
     tmpstr = stringJoin(*psrc1, src2);
     LEPT_FREE(*psrc1);
@@ -599,13 +591,11 @@ stringReverse(const char  *src)
 char    *dest;
 l_int32  i, len;
 
-    PROCNAME("stringReverse");
-
     if (!src)
-        return (char *)ERROR_PTR("src not defined", procName, NULL);
+        return (char *)ERROR_PTR("src not defined", __func__, NULL);
     len = strlen(src);
     if ((dest = (char *)LEPT_CALLOC(len + 1, sizeof(char))) == NULL)
-        return (char *)ERROR_PTR("calloc fail for dest", procName, NULL);
+        return (char *)ERROR_PTR("calloc fail for dest", __func__, NULL);
     for (i = 0; i < len; i++)
         dest[i] = src[len - 1 - i];
 
@@ -654,12 +644,10 @@ char     nextc;
 char    *start, *substr;
 l_int32  istart, i, j, nchars;
 
-    PROCNAME("strtokSafe");
-
     if (!seps)
-        return (char *)ERROR_PTR("seps not defined", procName, NULL);
+        return (char *)ERROR_PTR("seps not defined", __func__, NULL);
     if (!psaveptr)
-        return (char *)ERROR_PTR("&saveptr not defined", procName, NULL);
+        return (char *)ERROR_PTR("&saveptr not defined", __func__, NULL);
 
     if (!cstr) {
         start = *psaveptr;
@@ -747,17 +735,15 @@ stringSplitOnToken(char        *cstr,
 {
 char  *saveptr;
 
-    PROCNAME("stringSplitOnToken");
-
     if (!phead)
-        return ERROR_INT("&head not defined", procName, 1);
+        return ERROR_INT("&head not defined", __func__, 1);
     if (!ptail)
-        return ERROR_INT("&tail not defined", procName, 1);
+        return ERROR_INT("&tail not defined", __func__, 1);
     *phead = *ptail = NULL;
     if (!cstr)
-        return ERROR_INT("cstr not defined", procName, 1);
+        return ERROR_INT("cstr not defined", __func__, 1);
     if (!seps)
-        return ERROR_INT("seps not defined", procName, 1);
+        return ERROR_INT("seps not defined", __func__, 1);
 
     *phead = strtokSafe(cstr, seps, &saveptr);
     if (saveptr)
@@ -791,13 +777,11 @@ stringCheckForChars(const char  *src,
 char     ch;
 l_int32  i, n;
 
-    PROCNAME("stringCheckForChars");
-
     if (!pfound)
-        return ERROR_INT("&found not defined", procName, 1);
+        return ERROR_INT("&found not defined", __func__, 1);
     *pfound = FALSE;
     if (!src || !chars)
-        return ERROR_INT("src and chars not both defined", procName, 1);
+        return ERROR_INT("src and chars not both defined", __func__, 1);
 
     n = strlen(src);
     for (i = 0; i < n; i++) {
@@ -826,15 +810,13 @@ char     ch;
 char    *dest;
 l_int32  nsrc, i, k;
 
-    PROCNAME("stringRemoveChars");
-
     if (!src)
-        return (char *)ERROR_PTR("src not defined", procName, NULL);
+        return (char *)ERROR_PTR("src not defined", __func__, NULL);
     if (!remchars)
         return stringNew(src);
 
     if ((dest = (char *)LEPT_CALLOC(strlen(src) + 1, sizeof(char))) == NULL)
-        return (char *)ERROR_PTR("dest not made", procName, NULL);
+        return (char *)ERROR_PTR("dest not made", __func__, NULL);
     nsrc = strlen(src);
     for (i = 0, k = 0; i < nsrc; i++) {
         ch = src[i];
@@ -882,12 +864,10 @@ stringReplaceEachSubstr(const char  *src,
 {
 size_t  datalen;
 
-    PROCNAME("stringReplaceEachSubstr");
-
     if (pcount) *pcount = 0;
     if (!src || !sub1 || !sub2)
         return (char *)ERROR_PTR("src, sub1, sub2 not all defined",
-                                 procName, NULL);
+                                 __func__, NULL);
 
     if (strlen(sub2) > 0) {
         return (char *)arrayReplaceEachSequence(
@@ -942,12 +922,10 @@ const char  *ptr;
 char        *dest;
 l_int32      nsrc, nsub1, nsub2, len, npre, loc;
 
-    PROCNAME("stringReplaceSubstr");
-
     if (pfound) *pfound = 0;
     if (!src || !sub1 || !sub2)
         return (char *)ERROR_PTR("src, sub1, sub2 not all defined",
-                                 procName, NULL);
+                                 __func__, NULL);
 
     if (ploc)
         loc = *ploc;
@@ -964,7 +942,7 @@ l_int32      nsrc, nsub1, nsub2, len, npre, loc;
     nsub2 = strlen(sub2);
     len = nsrc + nsub2 - nsub1;
     if ((dest = (char *)LEPT_CALLOC(len + 1, sizeof(char))) == NULL)
-        return (char *)ERROR_PTR("dest not made", procName, NULL);
+        return (char *)ERROR_PTR("dest not made", __func__, NULL);
     npre = ptr - src;
     memcpy(dest, src, npre);
     strcpy(dest + npre, sub2);
@@ -996,10 +974,8 @@ L_DNA *
 stringFindEachSubstr(const char  *src,
                      const char  *sub)
 {
-    PROCNAME("stringFindEachSubstr");
-
     if (!src || !sub)
-        return (L_DNA *)ERROR_PTR("src, sub not both defined", procName, NULL);
+        return (L_DNA *)ERROR_PTR("src, sub not both defined", __func__, NULL);
 
     return arrayFindEachSequence((const l_uint8 *)src, strlen(src),
                                  (const l_uint8 *)sub, strlen(sub));
@@ -1030,13 +1006,11 @@ stringFindSubstr(const char  *src,
 {
 const char *ptr;
 
-    PROCNAME("stringFindSubstr");
-
     if (ploc) *ploc = -1;
     if (!src || !sub)
-        return ERROR_INT("src and sub not both defined", procName, 0);
+        return ERROR_INT("src and sub not both defined", __func__, 0);
     if (strlen(sub) == 0)
-        return ERROR_INT("substring length 0", procName, 0);
+        return ERROR_INT("substring length 0", __func__, 0);
     if (strlen(src) == 0)
         return 0;
 
@@ -1093,14 +1067,12 @@ size_t    newsize;
 l_int32   n, i, j, di, si, index, incr;
 L_DNA    *da;
 
-    PROCNAME("arrayReplaceEachSequence");
-
     if (pcount) *pcount = 0;
     if (!datas || !seq)
         return (l_uint8 *)ERROR_PTR("datas & seq not both defined",
-                                    procName, NULL);
+                                    __func__, NULL);
     if (!pdatadlen)
-        return (l_uint8 *)ERROR_PTR("&datadlen not defined", procName, NULL);
+        return (l_uint8 *)ERROR_PTR("&datadlen not defined", __func__, NULL);
     *pdatadlen = 0;
 
         /* Identify the locations of the sequence.  If there are none,
@@ -1117,7 +1089,7 @@ L_DNA    *da;
     newsize = dataslen + n * (newseqlen - seqlen) + 4;
     if ((datad = (l_uint8 *)LEPT_CALLOC(newsize, sizeof(l_uint8))) == NULL) {
         l_dnaDestroy(&da);
-        return (l_uint8 *)ERROR_PTR("datad not made", procName, NULL);
+        return (l_uint8 *)ERROR_PTR("datad not made", __func__, NULL);
     }
 
         /* Replace each sequence instance with a new sequence */
@@ -1178,11 +1150,9 @@ arrayFindEachSequence(const l_uint8  *data,
 l_int32  start, offset, realoffset, found;
 L_DNA   *da;
 
-    PROCNAME("arrayFindEachSequence");
-
     if (!data || !sequence)
         return (L_DNA *)ERROR_PTR("data & sequence not both defined",
-                                  procName, NULL);
+                                  __func__, NULL);
 
     da = l_dnaCreate(0);
     start = 0;
@@ -1219,13 +1189,15 @@ L_DNA   *da;
  *
  * <pre>
  * Notes:
- *      (1) The byte arrays 'data' and 'sequence' are not C strings,
+ *      (1) The byte arrays 'data' and 'sequence' are in general not C strings,
  *          because they can contain null bytes.  Therefore, for each
  *          we must give the length of the array.
  *      (2) This searches for the first occurrence in %data of %sequence,
  *          which consists of %seqlen bytes.  The parameter %seqlen
  *          must not exceed the actual length of the %sequence byte array.
- *      (3) If the sequence is not found, the offset will be 0, so you
+ *      (3) If either byte array is a C string, cast the array to
+ *          (const l_uint8 *) and use strlen() on the string for its length.
+ *      (4) If the sequence is not found, the offset will be 0, so you
  *          must check %found.
  * </pre>
  */
@@ -1239,14 +1211,12 @@ arrayFindSequence(const l_uint8  *data,
 {
 l_int32  i, j, found, lastpos;
 
-    PROCNAME("arrayFindSequence");
-
     if (poffset) *poffset = 0;
     if (pfound) *pfound = FALSE;
     if (!data || !sequence)
-        return ERROR_INT("data & sequence not both defined", procName, 1);
+        return ERROR_INT("data & sequence not both defined", __func__, 1);
     if (!poffset || !pfound)
-        return ERROR_INT("&offset and &found not defined", procName, 1);
+        return ERROR_INT("&offset and &found not defined", __func__, 1);
 
     lastpos = datalen - seqlen + 1;
     found = FALSE;
@@ -1307,10 +1277,8 @@ size_t   minsize;
 void    *indata;
 void    *newdata;
 
-    PROCNAME("reallocNew");
-
     if (!pindata)
-        return ERROR_PTR("input data not defined", procName, NULL);
+        return ERROR_PTR("input data not defined", __func__, NULL);
     indata = *pindata;
 
     if (newsize == 0) {   /* nonstandard usage */
@@ -1323,13 +1291,13 @@ void    *newdata;
 
     if (!indata) {  /* nonstandard usage */
         if ((newdata = (void *)LEPT_CALLOC(1, newsize)) == NULL)
-            return ERROR_PTR("newdata not made", procName, NULL);
+            return ERROR_PTR("newdata not made", __func__, NULL);
         return newdata;
     }
 
         /* Standard usage */
     if ((newdata = (void *)LEPT_CALLOC(1, newsize)) == NULL)
-        return ERROR_PTR("newdata not made", procName, NULL);
+        return ERROR_PTR("newdata not made", __func__, NULL);
     minsize = L_MIN(oldsize, newsize);
     memcpy(newdata, indata, minsize);
     LEPT_FREE(indata);
@@ -1355,16 +1323,15 @@ l_binaryRead(const char  *filename,
 l_uint8  *data;
 FILE     *fp;
 
-    PROCNAME("l_binaryRead");
-
     if (!pnbytes)
-        return (l_uint8 *)ERROR_PTR("pnbytes not defined", procName, NULL);
+        return (l_uint8 *)ERROR_PTR("pnbytes not defined", __func__, NULL);
     *pnbytes = 0;
     if (!filename)
-        return (l_uint8 *)ERROR_PTR("filename not defined", procName, NULL);
+        return (l_uint8 *)ERROR_PTR("filename not defined", __func__, NULL);
 
     if ((fp = fopenReadStream(filename)) == NULL)
-        return (l_uint8 *)ERROR_PTR("file stream not opened", procName, NULL);
+        return (l_uint8 *)ERROR_PTR_1("file stream not opened",
+                                      filename, __func__, NULL);
     data = l_binaryReadStream(fp, pnbytes);
     fclose(fp);
     return data;
@@ -1406,13 +1373,11 @@ l_uint8    *data;
 l_int32     seekable, navail, nadd, nread;
 L_BBUFFER  *bb;
 
-    PROCNAME("l_binaryReadStream");
-
     if (!pnbytes)
-        return (l_uint8 *)ERROR_PTR("&nbytes not defined", procName, NULL);
+        return (l_uint8 *)ERROR_PTR("&nbytes not defined", __func__, NULL);
     *pnbytes = 0;
     if (!fp)
-        return (l_uint8 *)ERROR_PTR("fp not defined", procName, NULL);
+        return (l_uint8 *)ERROR_PTR("fp not defined", __func__, NULL);
 
         /* Test if the stream is seekable, by attempting to seek to
          * the start of data.  This is a no-op.  If it is seekable, use
@@ -1442,7 +1407,7 @@ L_BBUFFER  *bb;
         memcpy(data, bb->array, bb->n);
         *pnbytes = bb->n;
     } else {
-        L_ERROR("calloc fail for data\n", procName);
+        L_ERROR("calloc fail for data\n", __func__);
     }
 
     bbufferDestroy(&bb);
@@ -1474,16 +1439,15 @@ l_binaryReadSelect(const char  *filename,
 l_uint8  *data;
 FILE     *fp;
 
-    PROCNAME("l_binaryReadSelect");
-
     if (!pnread)
-        return (l_uint8 *)ERROR_PTR("pnread not defined", procName, NULL);
+        return (l_uint8 *)ERROR_PTR("pnread not defined", __func__, NULL);
     *pnread = 0;
     if (!filename)
-        return (l_uint8 *)ERROR_PTR("filename not defined", procName, NULL);
+        return (l_uint8 *)ERROR_PTR("filename not defined", __func__, NULL);
 
     if ((fp = fopenReadStream(filename)) == NULL)
-        return (l_uint8 *)ERROR_PTR("file stream not opened", procName, NULL);
+        return (l_uint8 *)ERROR_PTR_1("file stream not opened",
+                                      filename, __func__, NULL);
     data = l_binaryReadSelectStream(fp, start, nbytes, pnread);
     fclose(fp);
     return data;
@@ -1519,20 +1483,18 @@ l_binaryReadSelectStream(FILE    *fp,
 l_uint8  *data;
 size_t    bytesleft, bytestoread, nread, filebytes;
 
-    PROCNAME("l_binaryReadSelectStream");
-
     if (!pnread)
-        return (l_uint8 *)ERROR_PTR("&nread not defined", procName, NULL);
+        return (l_uint8 *)ERROR_PTR("&nread not defined", __func__, NULL);
     *pnread = 0;
     if (!fp)
-        return (l_uint8 *)ERROR_PTR("stream not defined", procName, NULL);
+        return (l_uint8 *)ERROR_PTR("stream not defined", __func__, NULL);
 
         /* Verify and adjust the parameters if necessary */
     fseek(fp, 0, SEEK_END);  /* EOF */
     filebytes = ftell(fp);
     fseek(fp, 0, SEEK_SET);
     if (start > filebytes) {
-        L_ERROR("start = %zu but filebytes = %zu\n", procName,
+        L_ERROR("start = %zu but filebytes = %zu\n", __func__,
                 start, filebytes);
         return NULL;
     }
@@ -1544,11 +1506,11 @@ size_t    bytesleft, bytestoread, nread, filebytes;
 
         /* Read the data */
     if ((data = (l_uint8 *)LEPT_CALLOC(1, bytestoread + 1)) == NULL)
-        return (l_uint8 *)ERROR_PTR("calloc fail for data", procName, NULL);
+        return (l_uint8 *)ERROR_PTR("calloc fail for data", __func__, NULL);
     fseek(fp, start, SEEK_SET);
     nread = fread(data, 1, bytestoread, fp);
     if (nbytes != nread)
-        L_INFO("%zu bytes requested; %zu bytes read\n", procName,
+        L_INFO("%zu bytes requested; %zu bytes read\n", __func__,
                nbytes, nread);
     *pnread = nread;
     fseek(fp, 0, SEEK_SET);
@@ -1574,19 +1536,17 @@ l_binaryWrite(const char  *filename,
 char   actualOperation[20];
 FILE  *fp;
 
-    PROCNAME("l_binaryWrite");
-
     if (!filename)
-        return ERROR_INT("filename not defined", procName, 1);
+        return ERROR_INT("filename not defined", __func__, 1);
     if (!operation)
-        return ERROR_INT("operation not defined", procName, 1);
+        return ERROR_INT("operation not defined", __func__, 1);
     if (!data)
-        return ERROR_INT("data not defined", procName, 1);
+        return ERROR_INT("data not defined", __func__, 1);
     if (nbytes <= 0)
-        return ERROR_INT("nbytes must be > 0", procName, 1);
+        return ERROR_INT("nbytes must be > 0", __func__, 1);
 
     if (strcmp(operation, "w") && strcmp(operation, "a"))
-        return ERROR_INT("operation not one of {'w','a'}", procName, 1);
+        return ERROR_INT("operation not one of {'w','a'}", __func__, 1);
 
         /* The 'b' flag to fopen() is ignored for all POSIX
          * conforming systems.  However, Windows needs the 'b' flag. */
@@ -1594,7 +1554,7 @@ FILE  *fp;
     stringCat(actualOperation, 20, "b");
 
     if ((fp = fopenWriteStream(filename, actualOperation)) == NULL)
-        return ERROR_INT("stream not opened", procName, 1);
+        return ERROR_INT_1("stream not opened", filename, __func__, 1);
     fwrite(data, 1, nbytes, fp);
     fclose(fp);
     return 0;
@@ -1613,12 +1573,10 @@ nbytesInFile(const char  *filename)
 size_t  nbytes;
 FILE   *fp;
 
-    PROCNAME("nbytesInFile");
-
     if (!filename)
-        return ERROR_INT("filename not defined", procName, 0);
+        return ERROR_INT("filename not defined", __func__, 0);
     if ((fp = fopenReadStream(filename)) == NULL)
-        return ERROR_INT("stream not opened", procName, 0);
+        return ERROR_INT_1("stream not opened", filename, __func__, 0);
     nbytes = fnbytesInFile(fp);
     fclose(fp);
     return nbytes;
@@ -1636,18 +1594,16 @@ fnbytesInFile(FILE  *fp)
 {
 l_int64  pos, nbytes;
 
-    PROCNAME("fnbytesInFile");
-
     if (!fp)
-        return ERROR_INT("stream not open", procName, 0);
+        return ERROR_INT("stream not open", __func__, 0);
 
     pos = ftell(fp);          /* initial position */
     if (pos < 0)
-        return ERROR_INT("seek position must be > 0", procName, 0);
+        return ERROR_INT("seek position must be > 0", __func__, 0);
     fseek(fp, 0, SEEK_END);   /* EOF */
     nbytes = ftell(fp);
     if (nbytes < 0)
-        return ERROR_INT("nbytes is < 0", procName, 0);
+        return ERROR_INT("nbytes is < 0", __func__, 0);
     fseek(fp, pos, SEEK_SET);        /* back to initial position */
     return nbytes;
 }
@@ -1677,13 +1633,11 @@ l_binaryCopy(const l_uint8  *datas,
 {
 l_uint8  *datad;
 
-    PROCNAME("l_binaryCopy");
-
     if (!datas)
-        return (l_uint8 *)ERROR_PTR("datas not defined", procName, NULL);
+        return (l_uint8 *)ERROR_PTR("datas not defined", __func__, NULL);
 
     if ((datad = (l_uint8 *)LEPT_CALLOC(size + 4, sizeof(l_uint8))) == NULL)
-        return (l_uint8 *)ERROR_PTR("datad not made", procName, NULL);
+        return (l_uint8 *)ERROR_PTR("datad not made", __func__, NULL);
     memcpy(datad, datas, size);
     return datad;
 }
@@ -1716,13 +1670,11 @@ l_binaryCompare(const l_uint8  *data1,
 {
 l_int32  i;
 
-    PROCNAME("l_binaryCompare");
-
     if (!psame)
-        return ERROR_INT("&same not defined", procName, 1);
+        return ERROR_INT("&same not defined", __func__, 1);
     *psame = FALSE;
     if (!data1 || !data2)
-        return ERROR_INT("data1 and data2 not both defined", procName, 1);
+        return ERROR_INT("data1 and data2 not both defined", __func__, 1);
     if (size1 != size2) return 0;
     for (i = 0; i < size1; i++) {
         if (data1[i] != data2[i])
@@ -1751,15 +1703,13 @@ l_int32   ret;
 size_t    nbytes;
 l_uint8  *data;
 
-    PROCNAME("fileCopy");
-
     if (!srcfile)
-        return ERROR_INT("srcfile not defined", procName, 1);
+        return ERROR_INT("srcfile not defined", __func__, 1);
     if (!newfile)
-        return ERROR_INT("newfile not defined", procName, 1);
+        return ERROR_INT("newfile not defined", __func__, 1);
 
     if ((data = l_binaryRead(srcfile, &nbytes)) == NULL)
-        return ERROR_INT("data not returned", procName, 1);
+        return ERROR_INT("data not returned", __func__, 1);
     ret = l_binaryWrite(newfile, "w", data, nbytes);
     LEPT_FREE(data);
     return ret;
@@ -1780,12 +1730,10 @@ fileConcatenate(const char  *srcfile,
 size_t    nbytes;
 l_uint8  *data;
 
-    PROCNAME("fileConcatenate");
-
     if (!srcfile)
-        return ERROR_INT("srcfile not defined", procName, 1);
+        return ERROR_INT("srcfile not defined", __func__, 1);
     if (!destfile)
-        return ERROR_INT("destfile not defined", procName, 1);
+        return ERROR_INT("destfile not defined", __func__, 1);
 
     data = l_binaryRead(srcfile, &nbytes);
     l_binaryWrite(destfile, "a", data, nbytes);
@@ -1807,15 +1755,13 @@ fileAppendString(const char  *filename,
 {
 FILE  *fp;
 
-    PROCNAME("fileAppendString");
-
     if (!filename)
-        return ERROR_INT("filename not defined", procName, 1);
+        return ERROR_INT("filename not defined", __func__, 1);
     if (!str)
-        return ERROR_INT("str not defined", procName, 1);
+        return ERROR_INT("str not defined", __func__, 1);
 
     if ((fp = fopenWriteStream(filename, "a")) == NULL)
-        return ERROR_INT("stream not opened", procName, 1);
+        return ERROR_INT_1("stream not opened", filename, __func__, 1);
     fprintf(fp, "%s", str);
     fclose(fp);
     return 0;
@@ -1843,8 +1789,8 @@ FILE  *fp;
  *          of the text in the split files will be identical to the original.
  *      (3) The output filenames are in the form:
  *               <rootpath>_N.<ext>, N = 1, ... n
- *      (4) This handles the temp directory pathname conversion on windows:
- *              /tmp  ==>  [Windows Temp directory]
+ *      (4) This handles the temp directory pathname conversion where needed:
+ *              /tmp  ==>  [OS specific temp directory]
  *      (5) Files can also be sharded into sets of lines by the program 'split':
  *              split -n l/<n> <filename>
  *          Using 'split', the resulting files have approximately equal
@@ -1866,28 +1812,26 @@ char      outname[512];
 NUMA     *na;
 SARRAY   *sa;
 
-    PROCNAME("fileSplitLinesUniform");
-
     if (!filename)
-        return ERROR_INT("filename not defined", procName, 1);
+        return ERROR_INT("filename not defined", __func__, 1);
     if (!rootpath)
-        return ERROR_INT("rootpath not defined", procName, 1);
+        return ERROR_INT("rootpath not defined", __func__, 1);
     if (n <= 0)
-        return ERROR_INT("n must be > 0", procName, 1);
+        return ERROR_INT("n must be > 0", __func__, 1);
     if (save_empty != 0 && save_empty != 1)
-        return ERROR_INT("save_empty not 0 or 1", procName, 1);
+        return ERROR_INT("save_empty not 0 or 1", __func__, 1);
 
         /* Make sarray of lines; the newlines are stripped off */
     if ((data = l_binaryRead(filename, &nbytes)) == NULL)
-        return ERROR_INT("data not read", procName, 1);
+        return ERROR_INT("data not read", __func__, 1);
     sa = sarrayCreateLinesFromString((const char *)data, save_empty);
     LEPT_FREE(data);
     if (!sa)
-        return ERROR_INT("sa not made", procName, 1);
+        return ERROR_INT("sa not made", __func__, 1);
     totlines = sarrayGetCount(sa);
     if (n > totlines) {
         sarrayDestroy(&sa);
-        L_ERROR("num files = %d > num lines = %d\n", procName, n, totlines);
+        L_ERROR("num files = %d > num lines = %d\n", __func__, n, totlines);
         return 1;
     }
 
@@ -1924,8 +1868,8 @@ SARRAY   *sa;
  * Notes:
  *      (1) This should be used whenever you want to run fopen() to
  *          read from a stream.  Never call fopen() directory.
- *      (2) This handles the temp directory pathname conversion on windows:
- *              /tmp  ==>  [Windows Temp directory]
+ *      (2) This handles the temp directory pathname conversion where needed:
+ *              /tmp  ==>  [OS specific temp directory]
  * </pre>
  */
 FILE *
@@ -1934,10 +1878,8 @@ fopenReadStream(const char  *filename)
 char  *fname, *tail;
 FILE  *fp;
 
-    PROCNAME("fopenReadStream");
-
     if (!filename)
-        return (FILE *)ERROR_PTR("filename not defined", procName, NULL);
+        return (FILE *)ERROR_PTR("filename not defined", __func__, NULL);
 
         /* Try input filename */
     fname = genPathname(filename, NULL);
@@ -1947,11 +1889,12 @@ FILE  *fp;
 
         /* Else, strip directory and try locally */
     splitPathAtDirectory(filename, NULL, &tail);
+    if (!tail)
+        return (FILE*)ERROR_PTR_1("tail not found", filename, __func__, NULL);
     fp = fopen(tail, "rb");
-    LEPT_FREE(tail);
-
     if (!fp)
-        return (FILE *)ERROR_PTR("file not found", procName, NULL);
+        fp = (FILE *)ERROR_PTR_1("file not found", tail, __func__, NULL);
+    LEPT_FREE(tail);
     return fp;
 }
 
@@ -1967,8 +1910,8 @@ FILE  *fp;
  * Notes:
  *      (1) This should be used whenever you want to run fopen() to
  *          write or append to a stream.  Never call fopen() directory.
- *      (2) This handles the temp directory pathname conversion on windows:
- *              /tmp  ==>  [Windows Temp directory]
+ *      (2) This handles the temp directory pathname conversion where needed:
+ *              /tmp  ==>  [OS specific temp directory]
  * </pre>
  */
 FILE *
@@ -1978,16 +1921,14 @@ fopenWriteStream(const char  *filename,
 char  *fname;
 FILE  *fp;
 
-    PROCNAME("fopenWriteStream");
-
     if (!filename)
-        return (FILE *)ERROR_PTR("filename not defined", procName, NULL);
+        return (FILE *)ERROR_PTR("filename not defined", __func__, NULL);
 
     fname = genPathname(filename, NULL);
     fp = fopen(fname, modestring);
-    LEPT_FREE(fname);
     if (!fp)
-        return (FILE *)ERROR_PTR("stream not opened", procName, NULL);
+        fp = (FILE *)ERROR_PTR_1("stream not opened", fname, __func__, NULL);
+    LEPT_FREE(fname);
     return fp;
 }
 
@@ -2011,22 +1952,20 @@ fopenReadFromMemory(const l_uint8  *data,
 {
 FILE  *fp;
 
-    PROCNAME("fopenReadFromMemory");
-
     if (!data)
-        return (FILE *)ERROR_PTR("data not defined", procName, NULL);
+        return (FILE *)ERROR_PTR("data not defined", __func__, NULL);
 
 #if HAVE_FMEMOPEN
     if ((fp = fmemopen((void *)data, size, "rb")) == NULL)
-        return (FILE *)ERROR_PTR("stream not opened", procName, NULL);
+        return (FILE *)ERROR_PTR("stream not opened", __func__, NULL);
 #else  /* write to tmp file */
-    L_INFO("work-around: writing to a temp file\n", procName);
+    L_INFO("no fmemopen API --> work-around: write to temp file\n", __func__);
   #ifdef _WIN32
     if ((fp = fopenWriteWinTempfile()) == NULL)
-        return (FILE *)ERROR_PTR("tmpfile stream not opened", procName, NULL);
+        return (FILE *)ERROR_PTR("tmpfile stream not opened", __func__, NULL);
   #else
     if ((fp = tmpfile()) == NULL)
-        return (FILE *)ERROR_PTR("tmpfile stream not opened", procName, NULL);
+        return (FILE *)ERROR_PTR("tmpfile stream not opened", __func__, NULL);
   #endif  /*  _WIN32 */
     fwrite(data, 1, size, fp);
     rewind(fp);
@@ -2037,7 +1976,7 @@ FILE  *fp;
 
 
 /*--------------------------------------------------------------------*
- *                Opening a windows tmpfile for writing               *
+ *                Opening a Windows tmpfile for writing               *
  *--------------------------------------------------------------------*/
 /*!
  * \brief   fopenWriteWinTempfile()
@@ -2059,10 +1998,8 @@ l_int32  handle;
 FILE    *fp;
 char    *filename;
 
-    PROCNAME("fopenWriteWinTempfile");
-
     if ((filename = l_makeTempFilename()) == NULL) {
-        L_ERROR("l_makeTempFilename failed, %s\n", procName, strerror(errno));
+        L_ERROR("l_makeTempFilename failed, %s\n", __func__, strerror(errno));
         return NULL;
     }
 
@@ -2070,12 +2007,12 @@ char    *filename;
                    _O_TEMPORARY | _O_BINARY, _S_IREAD | _S_IWRITE);
     lept_free(filename);
     if (handle == -1) {
-        L_ERROR("_open failed, %s\n", procName, strerror(errno));
+        L_ERROR("_open failed, %s\n", __func__, strerror(errno));
         return NULL;
     }
 
     if ((fp = _fdopen(handle, "r+b")) == NULL) {
-        L_ERROR("_fdopen failed, %s\n", procName, strerror(errno));
+        L_ERROR("_fdopen failed, %s\n", __func__, strerror(errno));
         return NULL;
     }
 
@@ -2113,12 +2050,10 @@ FILE *
 lept_fopen(const char  *filename,
            const char  *mode)
 {
-    PROCNAME("lept_fopen");
-
     if (!filename)
-        return (FILE *)ERROR_PTR("filename not defined", procName, NULL);
+        return (FILE *)ERROR_PTR("filename not defined", __func__, NULL);
     if (!mode)
-        return (FILE *)ERROR_PTR("mode not defined", procName, NULL);
+        return (FILE *)ERROR_PTR("mode not defined", __func__, NULL);
 
     if (stringFindSubstr(mode, "r", NULL))
         return fopenReadStream(filename);
@@ -2142,10 +2077,8 @@ lept_fopen(const char  *filename,
 l_ok
 lept_fclose(FILE *fp)
 {
-    PROCNAME("lept_fclose");
-
     if (!fp)
-        return ERROR_INT("stream not defined", procName, 1);
+        return ERROR_INT("stream not defined", __func__, 1);
 
     return fclose(fp);
 }
@@ -2160,7 +2093,7 @@ lept_fclose(FILE *fp)
  *
  * <pre>
  * Notes:
- *      (1) For safety with windows DLLs, this can be used in conjunction
+ *      (1) For safety with Windows DLLs, this can be used in conjunction
  *          with lept_free() to avoid C-runtime boundary problems.
  *          Just use these two functions throughout your application.
  * </pre>
@@ -2201,7 +2134,7 @@ lept_free(void *ptr)
 /*!
  * \brief   lept_mkdir()
  *
- * \param[in]    subdir    of /tmp or its equivalent on Windows
+ * \param[in]    subdir    of /tmp or its OS specific equivalent
  * \return  0 on success, non-zero on failure
  *
  * <pre>
@@ -2211,7 +2144,7 @@ lept_free(void *ptr)
  *      (2) This makes any subdirectories of /tmp that are required.
  *      (3) The root temp directory is:
  *            /tmp    (unix)  [default]
- *            [Temp]  (windows)
+ *            [Temp]  (Windows)
  * </pre>
  */
 l_int32
@@ -2225,18 +2158,16 @@ SARRAY   *sa;
 l_uint32  attributes;
 #endif  /* _WIN32 */
 
-    PROCNAME("lept_mkdir");
-
     if (!LeptDebugOK) {
         L_INFO("making named temp subdirectory %s is disabled\n",
-               procName, subdir);
+               __func__, subdir);
         return 0;
     }
 
     if (!subdir)
-        return ERROR_INT("subdir not defined", procName, 1);
+        return ERROR_INT("subdir not defined", __func__, 1);
     if ((strlen(subdir) == 0) || (subdir[0] == '.') || (subdir[0] == '/'))
-        return ERROR_INT("subdir not an actual subdirectory", procName, 1);
+        return ERROR_INT("subdir not an actual subdirectory", __func__, 1);
 
     sa = sarrayCreate(0);
     sarraySplitString(sa, subdir, "/");
@@ -2246,9 +2177,9 @@ l_uint32  attributes;
 #ifndef _WIN32
     ret = mkdir(dir, 0777);
 #else
-    attributes = GetFileAttributes(dir);
+    attributes = GetFileAttributesA(dir);
     if (attributes == INVALID_FILE_ATTRIBUTES)
-        ret = (CreateDirectory(dir, NULL) ? 0 : 1);
+        ret = (CreateDirectoryA(dir, NULL) ? 0 : 1);
 #endif
         /* Make all the subdirectories */
     for (i = 0; i < n; i++) {
@@ -2256,8 +2187,8 @@ l_uint32  attributes;
 #ifndef _WIN32
         ret += mkdir(tmpdir, 0777);
 #else
-        if (CreateDirectory(tmpdir, NULL) == 0)
-            ret += (GetLastError () != ERROR_ALREADY_EXISTS);
+        if (CreateDirectoryA(tmpdir, NULL) == 0)
+            ret += (GetLastError() != ERROR_ALREADY_EXISTS);
 #endif
         LEPT_FREE(dir);
         dir = tmpdir;
@@ -2265,7 +2196,7 @@ l_uint32  attributes;
     LEPT_FREE(dir);
     sarrayDestroy(&sa);
     if (ret > 0)
-        L_ERROR("failure to create %d directories\n", procName, ret);
+        L_ERROR("failure to create %d directories\n", __func__, ret);
     return ret;
 }
 
@@ -2273,7 +2204,7 @@ l_uint32  attributes;
 /*!
  * \brief   lept_rmdir()
  *
- * \param[in]    subdir    of /tmp or its equivalent on Windows
+ * \param[in]    subdir    of /tmp or its OS specific equivalent
  * \return  0 on success, non-zero on failure
  *
  * <pre>
@@ -2283,7 +2214,7 @@ l_uint32  attributes;
  *      (2) This removes all files from the specified subdirectory of
  *          the root temp directory:
  *            /tmp    (unix)
- *            [Temp]  (windows)
+ *            [Temp]  (Windows)
  *          and then removes the subdirectory.
  *      (3) The combination
  *            lept_rmdir(subdir);
@@ -2303,17 +2234,15 @@ char    *newpath;
 char    *realdir;
 #endif  /* _WIN32 */
 
-    PROCNAME("lept_rmdir");
-
     if (!subdir)
-        return ERROR_INT("subdir not defined", procName, 1);
+        return ERROR_INT("subdir not defined", __func__, 1);
     if ((strlen(subdir) == 0) || (subdir[0] == '.') || (subdir[0] == '/'))
-        return ERROR_INT("subdir not an actual subdirectory", procName, 1);
+        return ERROR_INT("subdir not an actual subdirectory", __func__, 1);
 
         /* Find the temp subdirectory */
     dir = pathJoin("/tmp", subdir);
     if (!dir)
-        return ERROR_INT("directory name not made", procName, 1);
+        return ERROR_INT("directory name not made", __func__, 1);
     lept_direxists(dir, &exists);
     if (!exists) {  /* fail silently */
         LEPT_FREE(dir);
@@ -2322,7 +2251,7 @@ char    *realdir;
 
         /* List all the files in that directory */
     if ((sa = getFilenamesInDirectory(dir)) == NULL) {
-        L_ERROR("directory %s does not exist!\n", procName, dir);
+        L_ERROR("directory %s does not exist!\n", __func__, dir);
         LEPT_FREE(dir);
         return 1;
     }
@@ -2341,7 +2270,7 @@ char    *realdir;
     LEPT_FREE(realdir);
 #else
     newpath = genPathname(dir, NULL);
-    ret = (RemoveDirectory(newpath) ? 0 : 1);
+    ret = (RemoveDirectoryA(newpath) ? 0 : 1);
     LEPT_FREE(newpath);
 #endif  /* !_WIN32 */
 
@@ -2362,9 +2291,8 @@ char    *realdir;
  * Notes:
  *      (1) Always use unix pathname separators.
  *      (2) By calling genPathname(), if the pathname begins with "/tmp"
- *          this does an automatic directory translation on windows
- *          to a path in the windows [Temp] directory:
- *             "/tmp"  ==>  [Temp] (windows)
+ *          this does an automatic directory translation for operating
+ *          systems that use a different path for /tmp.
  * </pre>
  */
 void
@@ -2389,7 +2317,7 @@ char  *realdir;
 #else  /* _WIN32 */
     {
     l_uint32  attributes;
-    attributes = GetFileAttributes(realdir);
+    attributes = GetFileAttributesA(realdir);
     if (attributes != INVALID_FILE_ATTRIBUTES &&
         (attributes & FILE_ATTRIBUTE_DIRECTORY))
         *pexists = 1;
@@ -2417,9 +2345,8 @@ char  *realdir;
  *          all files in /tmp.
  *      (3) Use unix pathname separators.
  *      (4) By calling genPathname(), if the pathname begins with "/tmp"
- *          this does an automatic directory translation on windows
- *          to a path in the windows [Temp] directory:
- *             "/tmp"  ==>  [Temp] (windows)
+ *          this does an automatic directory translation for operating
+ *          systems that use a different path for /tmp.
  *      (5) Error conditions:
  *            * returns -1 if the directory is not found
  *            * returns the number of files (> 0) that it was unable to remove.
@@ -2434,14 +2361,12 @@ char     tempdir[256];
 l_int32  i, n, ret;
 SARRAY  *sa;
 
-    PROCNAME("lept_rm_match");
-
     makeTempDirname(tempdir, sizeof(tempdir), subdir);
     if ((sa = getSortedPathnamesInDirectory(tempdir, substr, 0, 0)) == NULL)
-        return ERROR_INT("sa not made", procName, -1);
+        return ERROR_INT("sa not made", __func__, -1);
     n = sarrayGetCount(sa);
     if (n == 0) {
-        L_WARNING("no matching files found\n", procName);
+        L_WARNING("no matching files found\n", __func__);
         sarrayDestroy(&sa);
         return 0;
     }
@@ -2451,7 +2376,7 @@ SARRAY  *sa;
         fname = sarrayGetString(sa, i, L_NOCOPY);
         path = genPathname(fname, NULL);
         if (lept_rmfile(path) != 0) {
-            L_ERROR("failed to remove %s\n", procName, path);
+            L_ERROR("failed to remove %s\n", __func__, path);
             ret++;
         }
         LEPT_FREE(path);
@@ -2471,8 +2396,7 @@ SARRAY  *sa;
  * <pre>
  * Notes:
  *      (1) By calling genPathname(), this does an automatic directory
- *          translation on windows to a path in the windows [Temp] directory:
- *             "/tmp/..."  ==>  [Temp]/... (windows)
+ *          translation on operating systems which use a different path.
  * </pre>
  */
 l_int32
@@ -2483,13 +2407,11 @@ char    *path;
 char     newtemp[256];
 l_int32  ret;
 
-    PROCNAME("lept_rm");
-
     if (!tail || strlen(tail) == 0)
-        return ERROR_INT("tail undefined or empty", procName, 1);
+        return ERROR_INT("tail undefined or empty", __func__, 1);
 
     if (makeTempDirname(newtemp, sizeof(newtemp), subdir))
-        return ERROR_INT("temp dirname not made", procName, 1);
+        return ERROR_INT("temp dirname not made", __func__, 1);
     path = genPathname(newtemp, tail);
     ret = lept_rmfile(path);
     LEPT_FREE(path);
@@ -2513,6 +2435,9 @@ l_int32  ret;
  *      (4) Unlike the other lept_* functions in this section, this can remove
  *          any file -- it is not restricted to files that are in /tmp or a
  *          subdirectory of it.
+ *      (5) For files in /tmp or a subdirectory of it, this does an automatic
+ *          directory translation for operating systems that use a different
+ *          path for /tmp.
  * </pre>
  */
 l_int32
@@ -2520,17 +2445,15 @@ lept_rmfile(const char  *filepath)
 {
 l_int32  ret;
 
-    PROCNAME("lept_rmfile");
-
     if (!filepath || strlen(filepath) == 0)
-        return ERROR_INT("filepath undefined or empty", procName, 1);
+        return ERROR_INT("filepath undefined or empty", __func__, 1);
 
 #ifndef _WIN32
     ret = remove(filepath);
 #else
         /* Set attributes to allow deletion of read-only files */
-    SetFileAttributes(filepath, FILE_ATTRIBUTE_NORMAL);
-    ret = DeleteFile(filepath) ? 0 : 1;
+    SetFileAttributesA(filepath, FILE_ATTRIBUTE_NORMAL);
+    ret = DeleteFileA(filepath) ? 0 : 1;
 #endif  /* !_WIN32 */
 
     return ret;
@@ -2560,9 +2483,8 @@ l_int32  ret;
  *          be freed by the caller.
  *      (6) Reminders:
  *          (a) specify files using unix pathnames
- *          (b) for windows, translates
- *                 /tmp  ==>  [Temp]
- *              where [Temp] is the windows temp directory
+ *          (b) this does an automatic directory translation on operating
+ *              systems that use a different path for /tmp.
  *      (7) Examples:
  *          * newdir = NULL,    newtail = NULL    ==> /tmp/src-tail
  *          * newdir = NULL,    newtail = abc     ==> /tmp/abc
@@ -2580,14 +2502,12 @@ char    *srcpath, *newpath, *dir, *srctail;
 char     newtemp[256];
 l_int32  ret;
 
-    PROCNAME("lept_mv");
-
     if (!srcfile)
-        return ERROR_INT("srcfile not defined", procName, 1);
+        return ERROR_INT("srcfile not defined", __func__, 1);
 
         /* Require output pathname to be in /tmp/ or a subdirectory */
     if (makeTempDirname(newtemp, sizeof(newtemp), newdir) == 1)
-        return ERROR_INT("newdir not NULL or a subdir of /tmp", procName, 1);
+        return ERROR_INT("newdir not NULL or a subdir of /tmp", __func__, 1);
 
         /* Get canonical src pathname */
     splitPathAtDirectory(srcfile, &dir, &srctail);
@@ -2622,7 +2542,7 @@ l_int32  ret;
     LEPT_FREE(srctail);
 
         /* Overwrite any existing file at 'newpath' */
-    ret = MoveFileEx(srcpath, newpath,
+    ret = MoveFileExA(srcpath, newpath,
                      MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING) ? 0 : 1;
 #endif  /* ! _WIN32 */
 
@@ -2658,9 +2578,8 @@ l_int32  ret;
  *          be freed by the caller.
  *      (6) Reminders:
  *          (a) specify files using unix pathnames
- *          (b) for windows, translates
- *                 /tmp  ==>  [Temp]
- *              where [Temp] is the windows temp directory
+ *          (b) this does an automatic directory translation for operating
+ *              systems that use a different path for /tmp
  *      (7) Examples:
  *          * newdir = NULL,    newtail = NULL    ==> /tmp/src-tail
  *          * newdir = NULL,    newtail = abc     ==> /tmp/abc
@@ -2679,14 +2598,12 @@ char    *srcpath, *newpath, *dir, *srctail;
 char     newtemp[256];
 l_int32  ret;
 
-    PROCNAME("lept_cp");
-
     if (!srcfile)
-        return ERROR_INT("srcfile not defined", procName, 1);
+        return ERROR_INT("srcfile not defined", __func__, 1);
 
         /* Require output pathname to be in /tmp or a subdirectory */
     if (makeTempDirname(newtemp, sizeof(newtemp), newdir) == 1)
-        return ERROR_INT("newdir not NULL or a subdir of /tmp", procName, 1);
+        return ERROR_INT("newdir not NULL or a subdir of /tmp", __func__, 1);
 
        /* Get canonical src pathname */
     splitPathAtDirectory(srcfile, &dir, &srctail);
@@ -2716,7 +2633,7 @@ l_int32  ret;
     LEPT_FREE(srctail);
 
         /* Overwrite any existing file at 'newpath' */
-    ret = CopyFile(srcpath, newpath, FALSE) ? 0 : 1;
+    ret = CopyFileA(srcpath, newpath, FALSE) ? 0 : 1;
 #endif   /* !_WIN32 */
 
     LEPT_FREE(srcpath);
@@ -2755,23 +2672,21 @@ callSystemDebug(const char *cmd)
 {
 l_int32  ret;
 
-    PROCNAME("callSystemDebug");
-
     if (!cmd) {
-        L_ERROR("cmd not defined\n", procName);
+        L_ERROR("cmd not defined\n", __func__);
         return;
     }
     if (LeptDebugOK == FALSE) {
-        L_INFO("'system' calls are disabled\n", procName);
+        L_INFO("'system' calls are disabled\n", __func__);
         return;
     }
 
 #if defined(__APPLE__)  /* iOS 11 does not support system() */
 
-  #if TARGET_OS_OSX /* Mac OS X */
+  #if (defined(TARGET_OS_OSX) && TARGET_OS_OSX == 1)  /* Mac OS X */
     ret = system(cmd);
   #elif TARGET_OS_IPHONE || defined(OS_IOS)  /* iOS */
-    L_ERROR("iOS 11 does not support system()\n", procName);
+    L_ERROR("iOS 11 does not support system()\n", __func__);
   #endif  /* TARGET_OS_OSX */
 
 #else /* ! __APPLE__ */
@@ -2817,7 +2732,7 @@ l_int32  ret;
  *      (5) The input can have either forward (unix) or backward (win)
  *          slash separators.  The output has unix separators.
  *          Note that Win32 pathname functions generally accept both
- *          slash forms, but the windows command line interpreter
+ *          slash forms, but the Windows command line interpreter
  *          only accepts backward slashes, because forward slashes are
  *          used to demarcate switches (vs. dashes in unix).
  * </pre>
@@ -2829,14 +2744,12 @@ splitPathAtDirectory(const char  *pathname,
 {
 char  *cpathname, *lastslash;
 
-    PROCNAME("splitPathAtDirectory");
-
     if (!pdir && !ptail)
-        return ERROR_INT("null input for both strings", procName, 1);
+        return ERROR_INT("null input for both strings", __func__, 1);
     if (pdir) *pdir = NULL;
     if (ptail) *ptail = NULL;
     if (!pathname)
-        return ERROR_INT("pathname not defined", procName, 1);
+        return ERROR_INT("pathname not defined", __func__, 1);
 
     cpathname = stringNew(pathname);
     convertSepCharsInPath(cpathname, UNIX_PATH_SEPCHAR);
@@ -2900,14 +2813,12 @@ splitPathAtExtension(const char  *pathname,
 char  *tail, *dir, *lastdot;
 char   empty[4] = "";
 
-    PROCNAME("splitPathExtension");
-
     if (!pbasename && !pextension)
-        return ERROR_INT("null input for both strings", procName, 1);
+        return ERROR_INT("null input for both strings", __func__, 1);
     if (pbasename) *pbasename = NULL;
     if (pextension) *pextension = NULL;
     if (!pathname)
-        return ERROR_INT("pathname not defined", procName, 1);
+        return ERROR_INT("pathname not defined", __func__, 1);
 
         /* Split out the directory first */
     splitPathAtDirectory(pathname, &dir, &tail);
@@ -2982,14 +2893,12 @@ size_t      size;
 SARRAY     *sa1, *sa2;
 L_BYTEA    *ba;
 
-    PROCNAME("pathJoin");
-
     if (!dir && !fname)
         return stringNew("");
     if (dir && strlen(dir) >= 2 && dir[0] == '.' && dir[1] == '.')
-        return (char *)ERROR_PTR("dir starts with '..'", procName, NULL);
+        return (char *)ERROR_PTR("dir starts with '..'", __func__, NULL);
     if (fname && strlen(fname) >= 2 && fname[0] == '.' && fname[1] == '.')
-        return (char *)ERROR_PTR("fname starts with '..'", procName, NULL);
+        return (char *)ERROR_PTR("fname starts with '..'", __func__, NULL);
 
     sa1 = sarrayCreate(0);
     sa2 = sarrayCreate(0);
@@ -3057,17 +2966,15 @@ appendSubdirs(const char  *basedir,
 char   *newdir;
 size_t  len1, len2, len3, len4;
 
-    PROCNAME("appendSubdirs");
-
     if (!basedir || !subdirs)
         return (char *)ERROR_PTR("basedir and subdirs not both defined",
-                                 procName, NULL);
+                                 __func__, NULL);
 
     len1 = strlen(basedir);
     len2 = strlen(subdirs);
     len3 = len1 + len2 + 8;
     if ((newdir = (char *)LEPT_CALLOC(len3, 1)) == NULL)
-        return (char *)ERROR_PTR("newdir not made", procName, NULL);
+        return (char *)ERROR_PTR("newdir not made", __func__, NULL);
     stringCat(newdir, len3, basedir);
     if (newdir[len1 - 1] != '/')  /* add '/' if necessary */
         newdir[len1] = '/';
@@ -3113,15 +3020,14 @@ convertSepCharsInPath(char    *path,
 l_int32  i;
 size_t   len;
 
-    PROCNAME("convertSepCharsInPath");
     if (!path)
-        return ERROR_INT("path not defined", procName, 1);
+        return ERROR_INT("path not defined", __func__, 1);
     if (type != UNIX_PATH_SEPCHAR && type != WIN_PATH_SEPCHAR)
-        return ERROR_INT("invalid type", procName, 1);
+        return ERROR_INT("invalid type", __func__, 1);
 
     len = strlen(path);
     if (type == UNIX_PATH_SEPCHAR) {
-#ifdef _WIN32  /* only convert on windows */
+#ifdef _WIN32  /* only convert on Windows */
         for (i = 0; i < len; i++) {
             if (path[i] == '\\')
                 path[i] = '/';
@@ -3153,16 +3059,18 @@ size_t   len;
  *              %fname == NULL.
  *            * from the name of a file in the local directory placed in
  *              %fname, with %dir == NULL.
- *            * if in a "/tmp" directory and on windows, the windows
- *              temp directory is used.
- *      (2) On windows, if the root of %dir is '/tmp', this does a name
- *          translation:
- *             "/tmp"  ==>  [Temp] (windows)
- *          where [Temp] is the windows temp directory.
+ *            * if in a "/tmp" directory and on iOS, macOS or Windows,
+ *              the OS specific temp directory is used.
+ *      (2) This does an automatic directory translation for operating
+ *          systems that use a different path for /tmp.
+ *          That path is determined
+ *             * on Windows: by GetTempPath()
+ *             * on macOS, iOS: by confstr() (see man page)
  *      (3) On unix, the TMPDIR variable is ignored.  No rewriting
  *          of temp directories is permitted.
  *      (4) There are four cases for the input:
- *          (a) %dir is a directory and %fname is defined: result is a full path
+ *          (a) %dir is a directory and %fname is defined: result is a
+ *              full path
  *          (b) %dir is a directory and %fname is null: result is a directory
  *          (c) %dir is a full path and %fname is null: result is a full path
  *          (d) %dir is null or an empty string: start in the current dir;
@@ -3175,22 +3083,25 @@ char *
 genPathname(const char  *dir,
             const char  *fname)
 {
-l_int32  is_win32 = FALSE;
+#if defined(REWRITE_TMP)
+l_int32  rewrite_tmp = TRUE;
+#else
+l_int32  rewrite_tmp = FALSE;
+#endif  /* _WIN32 */
 char    *cdir, *pathout;
 l_int32  dirlen, namelen;
 size_t   size;
 
-    PROCNAME("genPathname");
-
     if (!dir && !fname)
-        return (char *)ERROR_PTR("no input", procName, NULL);
+        return (char *)ERROR_PTR("no input", __func__, NULL);
 
         /* Handle the case where we start from the current directory */
     if (!dir || dir[0] == '\0') {
         if ((cdir = getcwd(NULL, 0)) == NULL)
-            return (char *)ERROR_PTR("no current dir found", procName, NULL);
+            return (char *)ERROR_PTR("no current dir found", __func__, NULL);
     } else {
-        cdir = stringNew(dir);
+        if ((cdir = stringNew(dir)) == NULL)
+            return (char *)ERROR_PTR("stringNew failed", __func__, NULL);
     }
 
         /* Convert to unix path separators, and remove the trailing
@@ -3206,26 +3117,32 @@ size_t   size;
     size = dirlen + namelen + 256;
     if ((pathout = (char *)LEPT_CALLOC(size, sizeof(char))) == NULL) {
         LEPT_FREE(cdir);
-        return (char *)ERROR_PTR("pathout not made", procName, NULL);
+        return (char *)ERROR_PTR("pathout not made", __func__, NULL);
     }
-
-#ifdef _WIN32
-    is_win32 = TRUE;
-#endif  /* _WIN32 */
 
         /* First handle %dir (which may be a full pathname).
          * There is no path rewriting on unix, and on win32, we do not
          * rewrite unless the specified directory is /tmp or
          * a subdirectory of /tmp */
-    if (!is_win32 || dirlen < 4 ||
+    if (!rewrite_tmp || dirlen < 4 ||
         (dirlen == 4 && strncmp(cdir, "/tmp", 4) != 0) ||  /* not in "/tmp" */
         (dirlen > 4 && strncmp(cdir, "/tmp/", 5) != 0)) {  /* not in "/tmp/" */
         stringCopy(pathout, cdir, dirlen);
-    } else {  /* Rewrite for win32 with "/tmp" specified for the directory. */
-#ifdef _WIN32
+    } else {  /* Rewrite with "/tmp" specified for the directory. */
+#if defined(__APPLE__)
+        size_t n = confstr(_CS_DARWIN_USER_TEMP_DIR, pathout, size);
+        if (n == 0 || n > size) {
+            /* Fall back to using /tmp */
+            stringCopy(pathout, cdir, dirlen);
+        } else {
+            /* Add the rest of cdir */
+            if (dirlen > 4)
+                stringCat(pathout, size, cdir + 4);
+        }
+#elif defined(_WIN32)
         l_int32 tmpdirlen;
         char tmpdir[MAX_PATH];
-        GetTempPath(sizeof(tmpdir), tmpdir);  /* get the windows temp dir */
+        GetTempPathA(sizeof(tmpdir), tmpdir);  /* get the Windows temp dir */
         tmpdirlen = strlen(tmpdir);
         if (tmpdirlen > 0 && tmpdir[tmpdirlen - 1] == '\\') {
             tmpdir[tmpdirlen - 1] = '\0';  /* trim the trailing '\' */
@@ -3266,10 +3183,8 @@ size_t   size;
  *      (2) Caller allocates %result, large enough to hold the path,
  *          which is:
  *            /tmp/%subdir       (unix)
- *            [Temp]/%subdir     (windows, mac, ios)
- *          where [Temp] is a path determined
- *             - on windows, mac: by GetTempPath()
- *             - on ios: by confstr() (see man page)
+ *            [Temp]/%subdir     (Windows, macOS, iOS)
+ *          where [Temp] is the OS path
  *          and %subdir is in general a set of nested subdirectories:
  *            dir1/dir2/.../dirN
  *          which in use would not typically exceed 2 levels.
@@ -3289,40 +3204,25 @@ char    *dir, *path;
 l_int32  ret = 0;
 size_t   pathlen;
 
-    PROCNAME("makeTempDirname");
-
     if (!result)
-        return ERROR_INT("result not defined", procName, 1);
+        return ERROR_INT("result not defined", __func__, 1);
     if (subdir && ((subdir[0] == '.') || (subdir[0] == '/')))
-        return ERROR_INT("subdir not an actual subdirectory", procName, 1);
+        return ERROR_INT("subdir not an actual subdirectory", __func__, 1);
 
     memset(result, 0, nbytes);
 
-#ifdef OS_IOS
-    {
-        size_t n = confstr(_CS_DARWIN_USER_TEMP_DIR, result, nbytes);
-        if (n == 0) {
-            L_ERROR("failed to find tmp dir, %s\n", procName, strerror(errno));
-            return 1;
-        } else if (n > nbytes) {
-            return ERROR_INT("result array too small for path\n", procName, 1);
-        }
-        dir = pathJoin(result, subdir);
-    }
-#else
     dir = pathJoin("/tmp", subdir);
-#endif /*  ~ OS_IOS */
 
-#ifndef _WIN32
-    path = stringNew(dir);
-#else
+#if defined(REWRITE_TMP)
     path = genPathname(dir, NULL);
+#else
+    path = stringNew(dir);
 #endif  /*  ~ _WIN32 */
     pathlen = strlen(path);
     if (pathlen < nbytes - 1) {
-        stringCat(result, nbytes, path);
+        stringCopy(result, path, nbytes);
     } else {
-        L_ERROR("result array too small for path\n", procName);
+        L_ERROR("result array too small for path\n", __func__);
         ret = 1;
     }
 
@@ -3353,12 +3253,10 @@ modifyTrailingSlash(char    *path,
 char    lastchar;
 size_t  len;
 
-    PROCNAME("modifyTrailingSlash");
-
     if (!path)
-        return ERROR_INT("path not defined", procName, 1);
+        return ERROR_INT("path not defined", __func__, 1);
     if (flag != L_ADD_TRAIL_SLASH && flag != L_REMOVE_TRAIL_SLASH)
-        return ERROR_INT("invalid flag", procName, 1);
+        return ERROR_INT("invalid flag", __func__, 1);
 
     len = strlen(path);
     lastchar = path[len - 1];
@@ -3382,7 +3280,7 @@ size_t  len;
  *      (1) On unix, this makes a filename of the form
  *               "/tmp/lept.XXXXXX",
  *          where each X is a random character.
- *      (2) On windows, this makes a filename of the form
+ *      (2) On Windows, this makes a filename of the form
  *               "/[Temp]/lp.XXXXXX".
  *      (3) On all systems, this fails if the file is not writable.
  *      (4) Safest usage is to write to a subdirectory in debug code.
@@ -3400,10 +3298,8 @@ l_makeTempFilename(void)
 {
 char  dirname[240];
 
-    PROCNAME("l_makeTempFilename");
-
     if (makeTempDirname(dirname, sizeof(dirname), NULL) == 1)
-        return (char *)ERROR_PTR("failed to make dirname", procName, NULL);
+        return (char *)ERROR_PTR("failed to make dirname", __func__, NULL);
 
 #ifndef _WIN32
 {
@@ -3413,7 +3309,7 @@ char  dirname[240];
     fd = mkstemp(pattern);
     if (fd == -1) {
         LEPT_FREE(pattern);
-        return (char *)ERROR_PTR("mkstemp failed", procName, NULL);
+        return (char *)ERROR_PTR("mkstemp failed", __func__, NULL);
     }
     close(fd);
     return pattern;
@@ -3422,10 +3318,10 @@ char  dirname[240];
 {
     char  fname[MAX_PATH];
     FILE *fp;
-    if (GetTempFileName(dirname, "lp.", 0, fname) == 0)
-        return (char *)ERROR_PTR("GetTempFileName failed", procName, NULL);
+    if (GetTempFileNameA(dirname, "lp.", 0, fname) == 0)
+        return (char *)ERROR_PTR("GetTempFileName failed", __func__, NULL);
     if ((fp = fopen(fname, "wb")) == NULL)
-        return (char *)ERROR_PTR("file cannot be written to", procName, NULL);
+        return (char *)ERROR_PTR("file cannot be written to", __func__, NULL);
     fclose(fp);
     return stringNew(fname);
 }
@@ -3459,10 +3355,8 @@ extractNumberFromFilename(const char  *fname,
 char    *tail, *basename;
 l_int32  len, nret, num;
 
-    PROCNAME("extractNumberFromFilename");
-
     if (!fname)
-        return ERROR_INT("fname not defined", procName, -1);
+        return ERROR_INT("fname not defined", __func__, -1);
 
     splitPathAtDirectory(fname, NULL, &tail);
     splitPathAtExtension(tail, &basename, NULL);
@@ -3471,7 +3365,7 @@ l_int32  len, nret, num;
     len = strlen(basename);
     if (numpre + numpost > len - 1) {
         LEPT_FREE(basename);
-        return ERROR_INT("numpre + numpost too big", procName, -1);
+        return ERROR_INT("numpre + numpost too big", __func__, -1);
     }
 
     basename[len - numpost] = '\0';

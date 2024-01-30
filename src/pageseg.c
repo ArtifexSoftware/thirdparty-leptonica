@@ -42,8 +42,10 @@
  *      Textblock extraction
  *          PIX      *pixGenTextblockMask()
  *
- *      Location of page foreground
- *          PIX      *pixFindPageForeground()
+ *      Location and extraction of page foreground; cleaning pages
+ *          PIX      *pixCropImage()
+ *          PIX      *pixCleanImage()
+ *          BOX      *pixFindPageForeground()
  *
  *      Extraction of characters from image with only text
  *          l_int32   pixSplitIntoCharacters()
@@ -83,8 +85,9 @@
 #include <config_auto.h>
 #endif  /* HAVE_CONFIG_H */
 
+#include <math.h>
 #include "allheaders.h"
-#include "math.h"
+#include "pix_internal.h"
 
     /* These functions are not intended to work on very low-res images */
 static const l_int32  MinWidth = 100;
@@ -128,16 +131,14 @@ PIX     *pixtb2;   /* textblock mask; 2x reduction */
 PIX     *pixtbf2;  /* textblock mask; 2x reduction; small comps filtered */
 PIX     *pixtb;    /* textblock mask */
 
-    PROCNAME("pixGetRegionsBinary");
-
     if (ppixhm) *ppixhm = NULL;
     if (ppixtm) *ppixtm = NULL;
     if (ppixtb) *ppixtb = NULL;
     if (!pixs || pixGetDepth(pixs) != 1)
-        return ERROR_INT("pixs undefined or not 1 bpp", procName, 1);
+        return ERROR_INT("pixs undefined or not 1 bpp", __func__, 1);
     pixGetDimensions(pixs, &w, &h, NULL);
     if (w < MinWidth || h < MinHeight) {
-        L_ERROR("pix too small: w = %d, h = %d\n", procName, w, h);
+        L_ERROR("pix too small: w = %d, h = %d\n", __func__, w, h);
         return 1;
     }
 
@@ -244,7 +245,7 @@ PIX     *pixtb;    /* textblock mask */
     if (pixadb) {
         pixaConvertToPdf(pixadb, 0, 1.0, 0, 0, "Debug page segmentation",
                          "/tmp/lept/pageseg/debug.pdf");
-        L_INFO("Writing debug pdf to /tmp/lept/pageseg/debug.pdf\n", procName);
+        L_INFO("Writing debug pdf to /tmp/lept/pageseg/debug.pdf\n", __func__);
     }
 
     if (ppixhm)
@@ -311,15 +312,13 @@ pixGenerateHalftoneMask(PIX      *pixs,
 l_int32  w, h, empty;
 PIX     *pix1, *pix2, *pixhs, *pixhm, *pixd;
 
-    PROCNAME("pixGenerateHalftoneMask");
-
     if (ppixtext) *ppixtext = NULL;
     if (phtfound) *phtfound = 0;
     if (!pixs || pixGetDepth(pixs) != 1)
-        return (PIX *)ERROR_PTR("pixs undefined or not 1 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs undefined or not 1 bpp", __func__, NULL);
     pixGetDimensions(pixs, &w, &h, NULL);
     if (w < MinWidth || h < MinHeight) {
-        L_ERROR("pix too small: w = %d, h = %d\n", procName, w, h);
+        L_ERROR("pix too small: w = %d, h = %d\n", __func__, w, h);
         return NULL;
     }
 
@@ -394,17 +393,15 @@ pixGenTextlineMask(PIX      *pixs,
 l_int32  w, h, empty;
 PIX     *pix1, *pix2, *pixvws, *pixd;
 
-    PROCNAME("pixGenTextlineMask");
-
     if (ptlfound) *ptlfound = 0;
     if (!ppixvws)
-        return (PIX *)ERROR_PTR("&pixvws not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("&pixvws not defined", __func__, NULL);
     *ppixvws = NULL;
     if (!pixs || pixGetDepth(pixs) != 1)
-        return (PIX *)ERROR_PTR("pixs undefined or not 1 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs undefined or not 1 bpp", __func__, NULL);
     pixGetDimensions(pixs, &w, &h, NULL);
     if (w < MinWidth || h < MinHeight) {
-        L_ERROR("pix too small: w = %d, h = %d\n", procName, w, h);
+        L_ERROR("pix too small: w = %d, h = %d\n", __func__, w, h);
         return NULL;
     }
 
@@ -485,24 +482,22 @@ pixGenTextblockMask(PIX   *pixs,
 l_int32  w, h, empty;
 PIX     *pix1, *pix2, *pix3, *pixd;
 
-    PROCNAME("pixGenTextblockMask");
-
     if (!pixs || pixGetDepth(pixs) != 1)
-        return (PIX *)ERROR_PTR("pixs undefined or not 1 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs undefined or not 1 bpp", __func__, NULL);
     pixGetDimensions(pixs, &w, &h, NULL);
     if (w < MinWidth || h < MinHeight) {
-        L_ERROR("pix too small: w = %d, h = %d\n", procName, w, h);
+        L_ERROR("pix too small: w = %d, h = %d\n", __func__, w, h);
         return NULL;
     }
     if (!pixvws)
-        return (PIX *)ERROR_PTR("pixvws not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixvws not defined", __func__, NULL);
 
         /* Join pixels vertically to make a textblock mask */
     pix1 = pixMorphSequence(pixs, "c1.10 + o4.1", 0);
     pixZero(pix1, &empty);
     if (empty) {
         pixDestroy(&pix1);
-        L_INFO("no fg pixels in textblock mask\n", procName);
+        L_INFO("no fg pixels in textblock mask\n", __func__);
         return NULL;
     }
     if (pixadb) pixaAddPix(pixadb, pix1, L_COPY);
@@ -530,12 +525,287 @@ PIX     *pix1, *pix2, *pix3, *pixd;
 
 
 /*------------------------------------------------------------------*
- *                    Location of page foreground                   *
+ *    Location and extraction of page foreground; cleaning pages    *
  *------------------------------------------------------------------*/
+/*!
+ * \brief   pixCropImage()
+ *
+ * \param[in]    pixs        full resolution (any type or depth)
+ * \param[in]    lr_clear    full res pixels cleared at left and right sides
+ * \param[in]    tb_clear    full res pixels cleared at top and bottom sides
+ * \param[in]    edgeclean   parameter for removing edge noise (0-15)
+ *                           default = 0 (no removal);
+ *                           15 is maximally aggressive
+ * \param[in]    lr_add      full res expansion of crop box on left and right
+ * \param[in]    tb_add      full res expansion of crop box on top and bottom
+ * \param[in]    maxwiden    max fractional horizontal stretch allowed
+ * \param[in]   *debugfile   [optional] usually is NULL
+ * \param[out]  *pcropbox    [optional] crop box at full resolution
+ * \return  cropped pix, or NULL on error
+ *
+ * <pre>
+ * Notes:
+ *      (1) This binarizes and crops a page image.  After binarization
+ *          and 2x reduction, it does the following:
+ *          (a) Clears near the border by %lr_clear/2 and %tb_clear/ pixels
+ *          (b) If %edgeclean > 0, it removes isolated sets of pixels,
+ *              using a close/open operation of size %edgeclean + 1.
+ *          (c) Find the bounding box of remaining fg pixels
+ *          (d) Expands the box by %lr_add and and %tb_add pixels,
+ *              but respecting the cleared regions.
+ *          (e) 2x expansion of the bounding box to full resolution. 
+ *          (f) Crops the binarized image to the bounding box.
+ *          (g) Slightly thickens long horizontal lines.
+ *          (h) Does anamorphic horizontal upscaling by %maxwiden
+ *              to better fill an 8.5 x 11 inch printed page.
+ *              Suggest not to exceed 1.15.
+ *          Note that input parameters are given at full resolution and
+ *          (a) - (c) are done at 2x reduction for efficiency.
+ *      (2) The side clearing must not exceed 1/6 of the dimension on that side.
+ *      (3) The clear and add pixel parameters must be >= 0.
+ *      (4) This is not intended to work on small thumbnails.  The
+ *          dimensions of pixs must be at least MinWidth x MinHeight.
+ *      (5) Step (g) above helps with orthographically-produced music notation,
+ *          where the staff lines can be very thin and subject to printer alias.
+ * </pre>
+ */
+PIX *
+pixCropImage(PIX         *pixs,
+             l_int32      lr_clear,
+             l_int32      tb_clear,
+             l_int32      edgeclean,
+             l_int32      lr_add,
+             l_int32      tb_add,
+             l_float32    maxwiden,
+             const char  *debugfile,
+             BOX        **pcropbox)
+{
+char       cmd[64];
+l_int32    w, h, d, val;
+l_int32    left, right, top, bot, leftfinal, rightfinal, topfinal, botfinal;
+static l_int32    first_time = TRUE;
+l_float32  hscale;
+PIX       *pix1, *pix2, *pix3;
+PIXA      *pixa1;
+BOX       *box1, *box2;
+
+    if (pcropbox) *pcropbox = NULL;
+    if (!pixs)
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
+    if (edgeclean < 0) edgeclean = 0;
+    if (edgeclean > 15) {
+        L_WARNING("edgeclean > 15; setting to 15\n", __func__);
+        edgeclean = 15;
+    }
+    pixGetDimensions(pixs, &w, &h, &d);
+    if (w < MinWidth || h < MinHeight) {
+        L_ERROR("pix too small: w = %d, h = %d\n", __func__, w, h);
+        return NULL;
+    }
+    if (lr_clear < 0) lr_clear = 0;
+    if (tb_clear < 0) tb_clear = 0;
+    if (lr_add < 0) lr_add = 0;
+    if (tb_add < 0) tb_add = 0;
+    if (lr_clear > w / 6 || tb_clear > h / 6) {
+        L_ERROR("lr_clear or tb_clear too large; must be <= %d and %d\n",
+                __func__, w / 6, h / 6);
+        return NULL;
+    }
+    if (maxwiden > 1.2)
+        L_WARNING("maxwiden = %f > 1.2; suggest between 1.0 and 1.15\n",
+                  __func__, maxwiden);
+    pixa1 = (debugfile) ? pixaCreate(5) : NULL;
+    if (pixa1) pixaAddPix(pixa1, pixs, L_COPY);
+
+        /* Binarize if necessary and 2x reduction */
+    pix1 = pixBackgroundNormTo1MinMax(pixs, 1, 1);
+    pix2 = pixReduceRankBinary2(pix1, 2, NULL);
+
+        /* Clear out border pixels */
+    pixSetOrClearBorder(pix2, lr_clear / 2, lr_clear / 2, tb_clear / 2,
+                        tb_clear / 2, PIX_CLR);
+    if (pixa1) pixaAddPix(pixa1, pixScale(pix2, 2.0, 2.0), L_INSERT);
+
+        /* Optional morphological close/open and find the bounding box
+         * of the foreground pixels. */
+    if (edgeclean == 0) {
+        pixClipToForeground(pix2, NULL, &box1);
+    } else {
+        val = edgeclean + 1;
+        snprintf(cmd, 64, "c%d.%d + o%d.%d", val, val, val, val);
+        pix3 = pixMorphSequence(pix2, cmd, 0);
+        pixClipToForeground(pix3, NULL, &box1);
+        pixDestroy(&pix3);
+    }
+    pixDestroy(&pix2);
+
+        /* Transform to full resolution */
+    box2 = boxTransform(box1, 0, 0, 2.0, 2.0);  /* full res */
+    if (pixa1) {
+        pix2 = pixCopy(NULL, pix1);
+        pixRenderBoxArb(pix2, box2, 5, 255, 0, 0);
+        pixaAddPix(pixa1, pix2, L_INSERT);
+    }
+
+        /* Adjust sides outward, respecting %lr_clear and %tb_clear */
+    boxGetSideLocations(box2, &left, &right, &top, &bot);
+    leftfinal = L_MAX(left - lr_add, lr_clear);
+    rightfinal = L_MIN(right + lr_add, w - lr_clear);
+    topfinal = L_MAX(top - tb_add, tb_clear);
+    botfinal = L_MIN(bot + tb_add, h - tb_clear);
+    boxSetSideLocations(box2, leftfinal, rightfinal, topfinal, botfinal);
+    boxDestroy(&box1);
+    if (pixa1) {
+        pix2 = pixCopy(NULL, pix1);
+        pixRenderBoxArb(pix2, box2, 5, 255, 0, 0);
+        pixaAddPix(pixa1, pix2, L_INSERT);
+    }
+
+        /* Crop the input image */
+    pix2 = pixClipRectangle(pix1, box2, NULL);
+
+        /* Slightly thicken long horizontal lines.  This prevents loss of
+         * printed thin music staff lines due to aliasing. */
+    pix3 = pixMorphSequence(pix2, "o80.1 + d1.2", 0);
+    pixOr(pix2, pix2, pix3);
+    pixDestroy(&pix3);
+
+        /* Widen the result to fit the standard page shape (8.5 x 11 inch).
+         * Do not stretch horizontally by more than %maxwiden. */
+    pixGetDimensions(pix2, &w, &h, NULL);
+    hscale = (l_float32)h / (1.2941f * (l_float32)w);
+    if (hscale > 1.0 && maxwiden > 1.0) {
+        hscale = L_MIN(hscale, maxwiden);
+        pix3 = pixScale(pix2, hscale, 1.0);
+        if (first_time == TRUE) {
+            lept_stderr("Widening page by factor %5.3f\n", hscale);
+            first_time = FALSE;
+        }
+    } else {
+        pix3 = pixClone(pix2);
+    }
+    pixDestroy(&pix1);
+    pixDestroy(&pix2);
+
+    if (pcropbox)
+        *pcropbox = box2;
+    else
+        boxDestroy(&box2);
+    if (pixa1) {
+       pixaAddPix(pixa1, pix3, L_COPY);
+       lept_stderr("Writing debug file: %s\n", debugfile);
+       pixaConvertToPdf(pixa1, 0, 1.0, L_DEFAULT_ENCODE, 0, NULL, debugfile);
+       pixaDestroy(&pixa1);
+    }
+    return pix3;
+}
+
+
+/*!
+ * \brief   pixCleanImage()
+ *
+ * \param[in]    pixs        full resolution (any type or depth)
+ * \param[in]    contrast    vary contrast: 1 = lightest; 10 = darkest;
+ *                           suggest 1 unless light features are being lost
+ * \param[in]    rotation    cw by 90 degrees: {0,1,2,3} represent
+ *                           0, 90, 180 and 270 degree cw rotations
+ * \param[in]    scale       1 (no scaling) or 2 (2x upscaling)
+ * \param[in]    opensize    opening size of structuring element for noise
+ *                           removal: {0 or 1 to skip; 2, 3 for opening}
+ * \return  cleaned pix, or NULL on error
+ *
+ * <pre>
+ * Notes:
+ *    (1) This deskews, optionally rotates and darkens, cleans background
+ *        to white, binarizes and optionally removes small noise.
+ *    (2) For color and grayscale input, local background normalization is
+ *        done to 200, and a threshold of 180 sets the maximum foreground
+ *        value in the normalized image.
+ *    (3) The %contrast parameter adjusts the binarization to avoid losing
+ *        lighter input pixels.  Contrast is increased as %contrast increases
+ *        from 1 to 10.
+ *    (4) The %scale parameter controls the thresholding to 1 bpp. Two values:
+ *            1 = threshold
+ *            2 = linear interpolated 2x upscaling before threshold.
+ *    (5) The #opensize parameter is the size of a square SEL used with
+ *        opening to remove small speckle noise.  Allowed open sizes are 2,3.
+ *        If this is to be used, try 2 before 3.
+ *    (6) This does the image processing for cleanTo1bppFilesToPdf() and
+ *        prog/cleanpdf.c.
+ * </pre>
+ */
+PIX *
+pixCleanImage(PIX         *pixs,
+              l_int32      contrast,
+              l_int32      rotation,
+              l_int32      scale,
+              l_int32      opensize)
+{
+char  sequence[32];
+PIX  *pix1, *pix2, *pix3, *pix4, *pix5;
+
+    if (!pixs)
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
+    if (rotation < 0 || rotation > 3) {
+        L_ERROR("invalid rotation = %d; rotation must be in  {0,1,2,3}\n",
+                __func__, rotation);
+        return NULL;
+    }
+    if (contrast < 1 || contrast > 10) {
+        L_ERROR("invalid contrast = %d; contrast must be in [1...10]\n",
+                __func__, contrast);
+        return NULL;
+    }
+    if (scale != 1 && scale != 2) {
+        L_ERROR("invalid scale = %d; scale must be 1 or 2\n",
+                __func__, opensize);
+        return NULL;
+    }
+    if (opensize > 3) {
+        L_ERROR("invalid opensize = %d; opensize must be <= 3\n",
+                __func__, opensize);
+        return NULL;
+    }
+
+    if (pixGetDepth(pixs) == 1) {
+        if (rotation > 0)
+            pix1 = pixRotateOrth(pixs, rotation);
+        else
+            pix1 = pixClone(pixs);
+        pix2 = pixFindSkewAndDeskew(pix1, 2, NULL, NULL);
+        if (scale == 2)
+            pix4 = pixExpandBinaryReplicate(pix2, 2, 2);
+        else  /* scale == 1 */
+            pix4 = pixClone(pix2);
+    } else {
+        pix1 = pixConvertTo8MinMax(pixs);
+        if (rotation > 0)
+            pix2 = pixRotateOrth(pix1, rotation);
+        else
+            pix2 = pixClone(pix1);
+        pix3 = pixFindSkewAndDeskew(pix2, 2, NULL, NULL);
+        pix4 = pixBackgroundNormTo1MinMax(pix3, contrast, scale);
+        pixDestroy(&pix3);
+    }
+
+    if (opensize == 2 || opensize == 3) {
+        snprintf(sequence, sizeof(sequence), "o%d.%d", opensize, opensize);
+        pix5 = pixMorphSequence(pix4, sequence, 0);
+    } else {
+        pix5 = pixClone(pix4);
+    }
+
+    pixDestroy(&pix1);
+    pixDestroy(&pix2);
+    pixDestroy(&pix4);
+    return pix5;
+}
+
+
 /*!
  * \brief   pixFindPageForeground()
  *
- * \param[in]    pixs       full resolution (any type or depth
+ * \param[in]    pixs       full resolution (any type or depth)
  * \param[in]    threshold  for binarization; typically about 128
  * \param[in]    mindist    min distance of text from border to allow
  *                          cleaning near border; at 2x reduction, this
@@ -581,21 +851,18 @@ PIX     *pixb, *pixb2, *pixseed, *pixsf, *pixm, *pix1, *pixg2;
 BOX     *box, *boxfg, *boxin, *boxd;
 BOXA    *ba1, *ba2;
 
-    PROCNAME("pixFindPageForeground");
-
     if (!pixs)
-        return (BOX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (BOX *)ERROR_PTR("pixs not defined", __func__, NULL);
     pixGetDimensions(pixs, &w, &h, NULL);
     if (w < MinWidth || h < MinHeight) {
-        L_ERROR("pix too small: w = %d, h = %d\n", procName, w, h);
+        L_ERROR("pix too small: w = %d, h = %d\n", __func__, w, h);
         return NULL;
     }
 
         /* Binarize, downscale by 0.5, remove the noise to generate a seed,
          * and do a seedfill back from the seed into those 8-connected
          * components of the binarized image for which there was at least
-         * one seed pixel.  Also clear out any components that are within
-         * 10 pixels of the edge at 2x reduction. */
+         * one seed pixel. */
     flag = (showmorph) ? 100 : 0;
     pixb = pixConvertTo1(pixs, threshold);
     pixb2 = pixScale(pixb, 0.5, 0.5);
@@ -607,7 +874,6 @@ BOXA    *ba1, *ba2;
     pixOr(pixseed, pixseed, pix1);
     pixDestroy(&pix1);
     pixsf = pixSeedfillBinary(NULL, pixseed, pixb2, 8);
-    pixSetOrClearBorder(pixsf, 10, 10, 10, 10, PIX_SET);
     pixm = pixRemoveBorderConnComps(pixsf, 8);
 
         /* Now, where is the main block of text?  We want to remove noise near
@@ -711,13 +977,11 @@ BOXAA  *baa;
 PIX    *pix, *pix1, *pix2, *pixdb;
 PIXA   *pixa1, *pixadb;
 
-    PROCNAME("pixSplitIntoCharacters");
-
     if (pboxa) *pboxa = NULL;
     if (ppixa) *ppixa = NULL;
     if (ppixdebug) *ppixdebug = NULL;
     if (!pixs || pixGetDepth(pixs) != 1)
-        return ERROR_INT("pixs not defined or not 1 bpp", procName, 1);
+        return ERROR_INT("pixs not defined or not 1 bpp", __func__, 1);
 
         /* Remove the small stuff */
     pix1 = pixSelectBySize(pixs, minw, minh, 8, L_SELECT_IF_BOTH,
@@ -812,11 +1076,9 @@ BOXA     *boxad;
 NUMA     *na1, *na2, *nasplit;
 PIX      *pix1, *pixdb;
 
-    PROCNAME("pixSplitComponentsWithProfile");
-
     if (ppixdebug) *ppixdebug = NULL;
     if (!pixs || pixGetDepth(pixs) != 1)
-        return (BOXA *)ERROR_PTR("pixa undefined or not 1 bpp", procName, NULL);
+        return (BOXA *)ERROR_PTR("pixa undefined or not 1 bpp", __func__, NULL);
     pixGetDimensions(pixs, &w, &h, NULL);
 
         /* Closing to consolidate characters vertically */
@@ -970,10 +1232,8 @@ BOXA    *boxa1, *boxa2, *boxa3;
 PIX     *pix1, *pix2, *pix3;
 PIXA    *pixa1, *pixa2, *pixa3;
 
-    PROCNAME("pixExtractTextlines");
-
     if (!pixs)
-        return (PIXA *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIXA *)ERROR_PTR("pixs not defined", __func__, NULL);
 
         /* Binarize carefully, if necessary */
     if (pixGetDepth(pixs) > 1) {
@@ -988,7 +1248,7 @@ PIXA    *pixa1, *pixa2, *pixa3;
     pixZero(pix1, &empty);
     if (empty) {
         pixDestroy(&pix1);
-        L_INFO("no fg pixels in input image\n", procName);
+        L_INFO("no fg pixels in input image\n", __func__);
         return NULL;
     }
     if (pixadb) pixaAddPix(pixadb, pix1, L_COPY);
@@ -1003,7 +1263,7 @@ PIXA    *pixa1, *pixa2, *pixa3;
          * The closing (csize) bridges gaps between words.  The opening
          * removes isolated bridges between textlines. */
     if ((res = pixGetXRes(pixs)) == 0) {
-        L_INFO("Resolution is not set: setting to 300 ppi\n", procName);
+        L_INFO("Resolution is not set: setting to 300 ppi\n", __func__);
         res = 300;
     }
     csize = L_MIN(120., 60.0 * res / 300.0);
@@ -1109,14 +1369,12 @@ BOXAA   *baa1;
 PIX     *pix1, *pix2, *pix3;
 PIXA    *pixa1, *pixa2;
 
-    PROCNAME("pixExtractRawTextlines");
-
     if (!pixs)
-        return (PIXA *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIXA *)ERROR_PTR("pixs not defined", __func__, NULL);
 
         /* Set maxw, maxh if default is requested */
     if ((res = pixGetXRes(pixs)) == 0) {
-        L_INFO("Resolution is not set: setting to 300 ppi\n", procName);
+        L_INFO("Resolution is not set: setting to 300 ppi\n", __func__);
         res = 300;
     }
     maxw = (maxw != 0) ? maxw : (l_int32)(0.5 * res);
@@ -1135,7 +1393,7 @@ PIXA    *pixa1, *pixa2;
     pixZero(pix1, &empty);
     if (empty) {
         pixDestroy(&pix1);
-        L_INFO("no fg pixels in input image\n", procName);
+        L_INFO("no fg pixels in input image\n", __func__);
         return NULL;
     }
     if (pixadb) pixaAddPix(pixadb, pix1, L_COPY);
@@ -1236,29 +1494,27 @@ BOX       *box;
 NUMA      *na1, *na2, *na3, *na4, *na5;
 PIX       *pix1, *pix2, *pix3, *pix4, *pix5;
 
-    PROCNAME("pixCountTextColumns");
-
     if (!pncols)
-        return ERROR_INT("&ncols not defined", procName, 1);
+        return ERROR_INT("&ncols not defined", __func__, 1);
     *pncols = -1;  /* init */
     if (!pixs || pixGetDepth(pixs) != 1)
-        return ERROR_INT("pixs not defined or not 1 bpp", procName, 1);
+        return ERROR_INT("pixs not defined or not 1 bpp", __func__, 1);
     if (deltafract < 0.15 || deltafract > 0.75)
-        L_WARNING("deltafract not in [0.15 ... 0.75]\n", procName);
+        L_WARNING("deltafract not in [0.15 ... 0.75]\n", __func__);
     if (peakfract < 0.25 || peakfract > 0.9)
-        L_WARNING("peakfract not in [0.25 ... 0.9]\n", procName);
+        L_WARNING("peakfract not in [0.25 ... 0.9]\n", __func__);
     if (clipfract < 0.0 || clipfract >= 0.5)
-        return ERROR_INT("clipfract not in [0.0 ... 0.5)\n", procName, 1);
+        return ERROR_INT("clipfract not in [0.0 ... 0.5)\n", __func__, 1);
     if (pixadb) pixaAddPix(pixadb, pixs, L_COPY);
 
         /* Scale to between 37.5 and 75 ppi */
     if ((res = pixGetXRes(pixs)) == 0) {
-        L_WARNING("resolution undefined; set to 300\n", procName);
+        L_WARNING("resolution undefined; set to 300\n", __func__);
         pixSetResolution(pixs, 300, 300);
         res = 300;
     }
     if (res < 37) {
-        L_WARNING("resolution %d very low\n", procName, res);
+        L_WARNING("resolution %d very low\n", __func__, res);
         scalefact = 37.5 / res;
         pix1 = pixScale(pixs, scalefact, scalefact);
     } else {
@@ -1310,7 +1566,7 @@ PIX       *pix1, *pix2, *pix3, *pix4, *pix5;
     numaGetMin(na1, &minval, NULL);
     fract = (l_float32)(maxval - minval) / h;  /* is there much at all? */
     if (fract < 0.05) {
-        L_INFO("very little content on page; 0 text columns\n", procName);
+        L_INFO("very little content on page; 0 text columns\n", __func__);
         *pncols = 0;
     } else {
         na2 = numaFindExtrema(na1, deltafract * (maxval - minval), &na3);
@@ -1322,7 +1578,7 @@ PIX       *pix1, *pix2, *pix3, *pix4, *pix5;
             numaGetFValue(na5, i, &val5);
             if (val4 > 0.3 && val4 < 0.7 && val5 >= peakfract) {
                 npeak++;
-                L_INFO("Peak(loc,val) = (%5.3f,%5.3f)\n", procName, val4, val5);
+                L_INFO("Peak(loc,val) = (%5.3f,%5.3f)\n", __func__, val4, val5);
             }
         }
         *pncols = npeak + 1;
@@ -1384,22 +1640,20 @@ PIX       *pix1, *pix2, *pix3, *pix4, *pix5, *pix6, *pix7;
 PIXA      *pixa1;
 SEL       *sel1;
 
-    PROCNAME("pixDecideIfText");
-
     if (!pistext)
-        return ERROR_INT("&istext not defined", procName, 1);
+        return ERROR_INT("&istext not defined", __func__, 1);
     *pistext = -1;
     if (!pixs)
-        return ERROR_INT("pixs not defined", procName, 1);
+        return ERROR_INT("pixs not defined", __func__, 1);
 
         /* Crop, convert to 1 bpp, 300 ppi */
-    if ((pix1 = pixPrepare1bpp(pixs, box, 0.1f, 300)) == NULL)
-        return ERROR_INT("pix1 not made", procName, 1);
+    if ((pix1 = pixPrepare1bpp(pixs, box, 0.1, 300)) == NULL)
+        return ERROR_INT("pix1 not made", __func__, 1);
 
     pixZero(pix1, &empty);
     if (empty) {
         pixDestroy(&pix1);
-        L_INFO("pix is empty\n", procName);
+        L_INFO("pix is empty\n", __func__);
         return 0;
     }
     w = pixGetWidth(pix1);
@@ -1503,12 +1757,12 @@ SEL       *sel1;
         if (*pistext == 1) {
             L_INFO("This is text: \n  n1 = %d, n2 = %d, n3 = %d, "
                    "minlines = %d\n  maxw = %d, ratio1 = %4.2f, h = %d, "
-                   "big_comp = %d\n", procName, n1, n2, n3, minlines,
+                   "big_comp = %d\n", __func__, n1, n2, n3, minlines,
                    maxw, ratio1, h, big_comp);
         } else {
             L_INFO("This is not text: \n  n1 = %d, n2 = %d, n3 = %d, "
                    "minlines = %d\n  maxw = %d, ratio1 = %4.2f, h = %d, "
-                   "big_comp = %d\n", procName, n1, n2, n3, minlines,
+                   "big_comp = %d\n", __func__, n1, n2, n3, minlines,
                    maxw, ratio1, h, big_comp);
         }
     }
@@ -1546,14 +1800,12 @@ l_int32   i, n;
 l_int32  *array;
 NUMA     *na;
 
-    PROCNAME("pixFindThreshFgExtent");
-
     if (ptop) *ptop = 0;
     if (pbot) *pbot = 0;
     if (!ptop && !pbot)
-        return ERROR_INT("nothing to determine", procName, 1);
+        return ERROR_INT("nothing to determine", __func__, 1);
     if (!pixs || pixGetDepth(pixs) != 1)
-        return ERROR_INT("pixs not defined or not 1 bpp", procName, 1);
+        return ERROR_INT("pixs not defined or not 1 bpp", __func__, 1);
 
     na = pixCountPixelsByRow(pixs, NULL);
     n = numaGetCount(na);
@@ -1636,13 +1888,11 @@ pixDecideIfTable(PIX      *pixs,
 l_int32  empty, nhb, nvb, nvw, score, htfound;
 PIX     *pix1, *pix2, *pix3, *pix4, *pix5, *pix6, *pix7, *pix8, *pix9;
 
-    PROCNAME("pixDecideIfTable");
-
     if (!pscore)
-        return ERROR_INT("&score not defined", procName, 1);
+        return ERROR_INT("&score not defined", __func__, 1);
     *pscore = -1;
     if (!pixs)
-        return ERROR_INT("pixs not defined", procName, 1);
+        return ERROR_INT("pixs not defined", __func__, 1);
 
         /* Check if there is an image region.  First convert to 1 bpp
          * at 175 ppi.  If an image is found, assume there is no table.  */
@@ -1653,19 +1903,19 @@ PIX     *pix1, *pix2, *pix3, *pix4, *pix5, *pix6, *pix7, *pix8, *pix9;
     pixDestroy(&pix2);
     if (htfound) {
         *pscore = 0;
-        L_INFO("pix has an image region\n", procName);
+        L_INFO("pix has an image region\n", __func__);
         return 0;
     }
 
         /* Crop, convert to 1 bpp, 75 ppi */
-    if ((pix1 = pixPrepare1bpp(pixs, box, 0.05f, 75)) == NULL)
-        return ERROR_INT("pix1 not made", procName, 1);
+    if ((pix1 = pixPrepare1bpp(pixs, box, 0.05, 75)) == NULL)
+        return ERROR_INT("pix1 not made", __func__, 1);
 
     pixZero(pix1, &empty);
     if (empty) {
         *pscore = 0;
         pixDestroy(&pix1);
-        L_INFO("pix is empty\n", procName);
+        L_INFO("pix is empty\n", __func__);
         return 0;
     }
 
@@ -1787,10 +2037,8 @@ l_float32  factor;
 BOX       *box1;
 PIX       *pix1, *pix2, *pix3, *pix4, *pix5;
 
-    PROCNAME("pixPrepare1bpp");
-
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
 
         /* Crop the image.  If no box is given, use %cropfract to remove
          * pixels near the image boundary; this helps avoid false
@@ -1813,7 +2061,7 @@ PIX       *pix1, *pix2, *pix3, *pix4, *pix5;
         pixDestroy(&pix1);
         pixDestroy(&pix2);
         if (!pix3) {
-            L_INFO("pix cleaning failed\n", procName);
+            L_INFO("pix cleaning failed\n", __func__);
             return NULL;
         }
         pix4 = pixThresholdToBinary(pix3, 200);
@@ -1828,7 +2076,7 @@ PIX       *pix1, *pix2, *pix3, *pix4, *pix5;
     if (outres <= 0)
         return pix4;
     if ((res = pixGetXRes(pixs)) == 0) {
-        L_WARNING("Resolution is not set: using 300 ppi\n", procName);
+        L_WARNING("Resolution is not set: using 300 ppi\n", __func__);
         res = 300;
     }
     if (res != outres) {
@@ -1872,17 +2120,15 @@ l_float32  fbg;
 BOX       *box;
 PIX       *pix1, *pix2, *pixm;
 
-    PROCNAME("pixEstimateBackground");
-
     if (!pbg)
-        return ERROR_INT("&bg not defined", procName, 1);
+        return ERROR_INT("&bg not defined", __func__, 1);
     *pbg = 0;
     if (!pixs || pixGetDepth(pixs) != 8)
-        return ERROR_INT("pixs not defined or not 8 bpp", procName, 1);
+        return ERROR_INT("pixs not defined or not 8 bpp", __func__, 1);
     if (darkthresh > 128)
-        L_WARNING("darkthresh unusually large\n", procName);
+        L_WARNING("darkthresh unusually large\n", __func__);
     if (edgecrop < 0.0 || edgecrop >= 1.0)
-        return ERROR_INT("edgecrop not in [0.0 ... 1.0)", procName, 1);
+        return ERROR_INT("edgecrop not in [0.0 ... 1.0)", __func__, 1);
 
     pix1 = pixRemoveColormap(pixs, REMOVE_CMAP_TO_GRAYSCALE);
     pixGetDimensions(pix1, &w, &h, NULL);
@@ -1957,19 +2203,17 @@ BOX     *box;
 BOXA    *boxa;
 PIX     *pix;
 
-    PROCNAME("pixFindLargeRectangles");
-
     if (ppixdb) *ppixdb = NULL;
     if (!pboxa)
-        return ERROR_INT("&boxa not defined", procName, 1);
+        return ERROR_INT("&boxa not defined", __func__, 1);
     *pboxa = NULL;
     if (!pixs || pixGetDepth(pixs) != 1)
-        return ERROR_INT("pixs not defined or not 1 bpp", procName, 1);
+        return ERROR_INT("pixs not defined or not 1 bpp", __func__, 1);
     if (polarity != 0 && polarity != 1)
-        return ERROR_INT("invalid polarity", procName, 1);
+        return ERROR_INT("invalid polarity", __func__, 1);
     if (nrect > 1000) {
         L_WARNING("large num rectangles = %d requested; using 1000\n",
-                  procName, nrect);
+                  __func__, nrect);
         nrect = 1000;
     }
 
@@ -1981,7 +2225,7 @@ PIX     *pix;
     for (i = 0; i < nrect; i++) {
         if (pixFindLargestRectangle(pix, polarity, &box, NULL) == 1) {
             boxDestroy(&box);
-            L_ERROR("failure in pixFindLargestRectangle\n", procName);
+            L_ERROR("failure in pixFindLargestRectangle\n", __func__);
             break;
         }
         boxaAddBox(boxa, box, L_INSERT);
@@ -2065,19 +2309,17 @@ BOX       *box;
 PIX       *pixw, *pixh;  /* keeps the width and height for the largest */
                          /* rectangles whose LR corner is located there. */
 
-    PROCNAME("pixFindLargestRectangle");
-
     if (ppixdb) *ppixdb = NULL;
     if (!pbox)
-        return ERROR_INT("&box not defined", procName, 1);
+        return ERROR_INT("&box not defined", __func__, 1);
     *pbox = NULL;
     if (!pixs)
-        return ERROR_INT("pixs not defined", procName, 1);
+        return ERROR_INT("pixs not defined", __func__, 1);
     pixGetDimensions(pixs, &w, &h, &d);
     if (d != 1)
-        return ERROR_INT("pixs not 1 bpp", procName, 1);
+        return ERROR_INT("pixs not 1 bpp", __func__, 1);
     if (polarity != 0 && polarity != 1)
-        return ERROR_INT("invalid polarity", procName, 1);
+        return ERROR_INT("invalid polarity", __func__, 1);
 
         /* Initialize lowest "fg" seen so far for each column */
     lowestfg = (l_int32 *)LEPT_CALLOC(w, sizeof(l_int32));
@@ -2214,17 +2456,15 @@ BOX     *box1, *box2, *box3, *box4, *box5;
 PIX     *pix1, *pix2, *pixdb1, *pixdb2;
 PIXA    *pixadb;
 
-    PROCNAME("pixFindRectangleInCC");
-
     if (!pixs || pixGetDepth(pixs) != 1)
-        return (BOX *)ERROR_PTR("pixs undefined or not 1 bpp", procName, NULL);
+        return (BOX *)ERROR_PTR("pixs undefined or not 1 bpp", __func__, NULL);
     if (fract <= 0.0 || fract > 1.0)
-        return (BOX *)ERROR_PTR("invalid fraction", procName, NULL);
+        return (BOX *)ERROR_PTR("invalid fraction", __func__, NULL);
     if (dir != L_SCAN_VERTICAL && dir != L_SCAN_HORIZONTAL)
-        return (BOX *)ERROR_PTR("invalid scan direction", procName, NULL);
+        return (BOX *)ERROR_PTR("invalid scan direction", __func__, NULL);
     if (select != L_GEOMETRIC_UNION && select != L_GEOMETRIC_INTERSECTION &&
         select != L_LARGEST_AREA && select != L_SMALLEST_AREA)
-        return (BOX *)ERROR_PTR("invalid select", procName, NULL);
+        return (BOX *)ERROR_PTR("invalid select", __func__, NULL);
 
         /* Extract the c.c. if necessary */
     x = y = 0;
@@ -2265,7 +2505,7 @@ PIXA    *pixadb;
         }
     }
     if (!found) {
-        L_WARNING("no run of sufficient size was found\n", procName);
+        L_WARNING("no run of sufficient size was found\n", __func__);
         pixDestroy(&pix2);
         pixDestroy(&pixdb1);
         pixaDestroy(&pixadb);
@@ -2354,7 +2594,7 @@ PIXA    *pixadb;
         if (box5) pixRenderBoxArb(pixdb2, box5, 4, 0, 0, 255);
         pixaAddPix(pixadb, pixdb2, L_INSERT);
         res = pixGetXRes(pixs);
-        L_INFO("Writing debug files to /tmp/lept/rect/\n", procName);
+        L_INFO("Writing debug files to /tmp/lept/rect/\n", __func__);
         pixaConvertToPdf(pixadb, res, 1.0, L_DEFAULT_ENCODE, 75, NULL,
                         "/tmp/lept/rect/fitrect.pdf");
         pix1 = pixaDisplayTiledAndScaled(pixadb, 32, 800, 1, 0, 40, 2);
@@ -2401,15 +2641,13 @@ BOX       *box1;
 BOXA      *boxa1;
 PIX       *pix1, *pix2, *pix3, *pix4, *pix5;
 
-    PROCNAME("pixAutoPhotoinvert");
-
     if (ppixm) *ppixm = NULL;
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
     if (thresh == 0) thresh = 128;
 
     if ((pix1 = pixConvertTo1(pixs, thresh)) == NULL)
-        return (PIX *)ERROR_PTR("pix1 not made", procName, NULL);
+        return (PIX *)ERROR_PTR("pix1 not made", __func__, NULL);
     if (pixadb) pixaAddPix(pixadb, pix1, L_COPY);
 
         /* Identify regions for photo-inversion:

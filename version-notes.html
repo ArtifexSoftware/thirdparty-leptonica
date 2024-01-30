@@ -77,7 +77,7 @@ This work is licensed under a <a rel="license" href="http://creativecommons.org/
 
 
 <h2 align=center>Version Notes for Leptonica</h2>
-<h3 align=center>8 Sept 2020</h3>
+<h3 align=center>22 Sept 2021</h3>
 
 <hr>
 <h2 align=center>  <IMG SRC="moller52.jpg" border=1 ALIGN_MIDDLE> </h2>
@@ -89,10 +89,78 @@ They are <i>not</i> a complete listing of the modifications.
 
 <pre>
 
-1.81.0  not yet set
+1.84.1  Not yet released
+        * Remove support for openjpeg versions < 2.1.
+        * Improve error handling for stringLength() and stringCat(), and
+          add tests in prog/string_reg.
+        * Source files changed: blend.c, dnafunc1.c, jp2kio.c, pageseg.c,
+          partify.c, pix1.c, ptafunc2.c, sarray2.c, utils2.c
+        * Prog files changed: boxa3_reg.c, string_reg.c, writetext_reg.c,
+          deskew_it.c
+
+1.84.0  Dec 23, 2023
+        * Add getPdfPageCount() to find the number of pages in a pdf file.
+        * Add getPdfPageSizes() and getPdfMediaBoxSizes() to find the
+          information necessary to render images properly.  Modify cleanpdf.c
+          and concatpdf.c to use this information.
+        * Add prog/splitpdf.c to split a pdf file into nearly equal page sets.
+        * Add ability to read and write rgba in bmp format, and
+          test in ioformats_reg.
+        * Add regression test prog/partition_reg.c
+        * Change the autotools library name from liblept to libleptonica,
+          to be consistent with the cmake library name.  (Apologies to Jeff!)
+        * Add tests for 24 bit pix reading and writing in bmp and png in
+          ioformats_reg.  Test new pixDisplayDiff() for visualizing diffs.
+        * Allow prog/concatpdf to output pdf with tiffg4 encoding and with
+          mixed tiffg4 and DCT encoding depending on image color content.
+        * Rename prog/concatpdf --> prog/compresspdf
+        * Put image processing and generation of output pdf from compresspdf
+          and cleanpdf into functions in new files: pdfapp.c, pdfappstub.c.
+        * Add versatile function for cropping an image and filling to
+          page size, along with prog/croppdf to do this on pdf file.
+
+1.83.0  Dec 20, 2022
+        * Simplify setting the title of pdf files.
+        * Catch tiff failure to open stream in fopenTiffMemStream()
+        * Check for POSIX functions fstatat() and dirfd() before use.
+        * In prog/cleanpdf: do not allow threshold to exceed 190.  Make all
+          parameters required; do not use default values for invalid parameters.
+        * In prog/concatpdf: add input param for title; add jpeg quality factor
+        * Fix flaky hash_reg test on i686: sets generated from SelectRange()
+          can depend slightly on platform.
+        * Convenience function for adding multiple black and white borders.
+        * Fix oss-fuzz issue 42202: underined shift in l_convertCharstrToInt().
+        * Fix oss-fuzz issue 43841: made pixCountPixels() more efficient.
+        * Fix oss-fuzz issue 44008: pixCountArbInRect() used wrong depth.
+        * Always return tiff resolution of 0 (unknown) if not set.
+        * Simplify operations on pix memory to help avoid mem leaks
+        * Make bmp non-support of 32-bit bmp (rgba) files explicit.
+        * Improve tiff read resolution conversion by rounding.
+        * Use stdatomic.h to make cloning string safe.
+          Remove all *GetRefcount() and *ChangeRefcount() accessors.
+        * Replace procName and mainName strings by __func__.
+        * Remove information about fields in many structs from the public
+          interface allheaders.h, instead putting them in internal files
+          pix_internal.h, array_internal.h and ccbord_internal.h.
+        * Increase the .so number from 5.4.0 to 6.0.0.
+        * Rename the autotools generated libraries from liblept to libleptonica
+        * Fix potential memory leaks from recogAverageSamples() and
+          recogDebugAverages() by not destroying a recog.
+
+1.82.0  Sept 22, 2021
+        * Fix issue-585: reading tiff rgb with tiffbpl = 1.5 * packedbpl.
+        * Fix issue-586: failure to properly wrap tiff-g4 in pdf without
+          transcoding.  The fix is to do transcoding for tiff-g4, as was
+          done before April 2021.
+
+1.81.1  June 11, 2021
+        * Added choice of codec (JP2 or J2K) when writing jp2k files.
+        * Fix use of hashmap with key based on dna.
+
+1.81.0  June 6, 2021
         * Fixed problems with tiff pdf wrapping photometry.
         * Fixed scaling issues in prog/cleanpdf for printing.
-        * New progs: tiffpdftest
+        * New progs: tiffpdftest, hashtest
         * Fixed uninitialized data error in pixAddBorderGeneral() and
           pixRemoveBorderGeneral()
         * Rewrote Numa functions that discretize into bins.  Have
@@ -112,6 +180,20 @@ They are <i>not</i> a complete listing of the modifications.
           is now in flipdetectdwa.c.notused.  Likewise prog/flipselgen.c
           is retained for completeness, renamed flipselgen.c.notused,
           and is not compiled.
+        * Added hashmap utility (hashmap.c, hashmap.h).
+        * Removed functions using dnahash on strings, pts and doubles.
+        * Improved the speed of hashing for strings and doubles.
+        * Added function for tiling images in pairs for comparison.
+        * Added null terminations to serialized strings written to memory,
+          preventing buffer overrun by strlen() [fixed by Stefan Weil].
+        * No longer use "NoInit" versions of pix creation in leptonica.
+          because they risk reading uninitialized data.  These functions
+          remain in the library because they are in use in applications.
+        * Add two composite binarization functions, from prog/binarize_set.
+        * Giulio Lunati fixed pnm reading to work with stdin input.
+        * Removed several of the boxa compare and modify functions.
+        * Implemented reading jpeg200 data encded in j2k "codestream" format.
+          Can now read data in both jp2 and j2k.
 
 1.80.0  28 July 2020
         * Improve bmp handling of 1 bpp images and sanity checking of params.

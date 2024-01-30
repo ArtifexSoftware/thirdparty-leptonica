@@ -54,7 +54,7 @@
 #include <math.h>
 #include "allheaders.h"
 
-    /* Min to travel after finding max before abandoning peak */
+    /* Minimum distance to travel after finding max before abandoning peak */
 static const l_int32  MinDistInPeak = 35;
 
     /* Thresholds for peaks and zeros, relative to the max peak */
@@ -65,9 +65,9 @@ static const l_int32  ZeroThresholdRatio = 100;
 static const l_int32  DefaultSlices = 10;
 static const l_int32  DefaultSweepReduction = 2;
 static const l_int32  DefaultBsReduction = 1;
-static const l_float32  DefaultSweepRange = 5.;   /* degrees */
-static const l_float32  DefaultSweepDelta = 1.;   /* degrees */
-static const l_float32  DefaultMinbsDelta = 0.01f;   /* degrees */
+static const l_float32  DefaultSweepRange = 5.;     /* degrees */
+static const l_float32  DefaultSweepDelta = 1.;     /* degrees */
+static const l_float32  DefaultMinbsDelta = 0.01f;  /* degrees */
 
     /* Overlap slice fraction added to top and bottom of each slice */
 static const l_float32  OverlapFraction = 0.5;
@@ -129,11 +129,9 @@ NUMA      *nasum, *nadiff, *naloc, *naval;
 PIX       *pix1, *pix2;
 PTA       *pta;
 
-    PROCNAME("pixFindBaselines");
-
     if (ppta) *ppta = NULL;
     if (!pixs || pixGetDepth(pixs) != 1)
-        return (NUMA *)ERROR_PTR("pixs undefined or not 1 bpp", procName, NULL);
+        return (NUMA *)ERROR_PTR("pixs undefined or not 1 bpp", __func__, NULL);
 
         /* Close up the text characters, removing noise */
     pix1 = pixMorphSequence(pixs, "c25.1 + e15.1", 0);
@@ -145,7 +143,7 @@ PTA       *pta;
          * The high positive-going peaks are the baselines */
     if ((nasum = pixCountPixelsByRow(pix1, NULL)) == NULL) {
         pixDestroy(&pix1);
-        return (NUMA *)ERROR_PTR("nasum not made", procName, NULL);
+        return (NUMA *)ERROR_PTR("nasum not made", __func__, NULL);
     }
     h = pixGetHeight(pixs);
     nadiff = numaCreate(h);
@@ -229,7 +227,7 @@ PTA       *pta;
     if (boxaGetCount(boxa1) == 0) {
         numaDestroy(&naloc);
         boxaDestroy(&boxa1);
-        L_INFO("no compnents after filtering\n", procName);
+        L_INFO("no components after filtering\n", __func__);
         return NULL;
     }
     boxa2 = boxaTransform(boxa1, 0, 0, 4., 4.);
@@ -333,10 +331,8 @@ l_int32    ret;
 PIX       *pixd;
 PTA       *ptas, *ptad;
 
-    PROCNAME("pixDeskewLocal");
-
     if (!pixs || pixGetDepth(pixs) != 1)
-        return (PIX *)ERROR_PTR("pixs undefined or not 1 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs undefined or not 1 bpp", __func__, NULL);
 
         /* Skew array gives skew angle (deg) as fctn of raster line
          * where it intersects the LHS of the image */
@@ -344,7 +340,7 @@ PTA       *ptas, *ptad;
                                    sweeprange, sweepdelta, minbsdelta,
                                    &ptas, &ptad);
     if (ret != 0)
-        return (PIX *)ERROR_PTR("transform pts not found", procName, NULL);
+        return (PIX *)ERROR_PTR("transform pts not found", __func__, NULL);
 
         /* Use a projective transform */
     pixd = pixProjectiveSampledPta(pixs, ptad, ptas, L_BRING_IN_WHITE);
@@ -405,13 +401,11 @@ l_float32  deg2rad, angr, angd, dely;
 NUMA      *naskew;
 PTA       *ptas, *ptad;
 
-    PROCNAME("pixGetLocalSkewTransform");
-
     if (!pptas || !pptad)
-        return ERROR_INT("&ptas and &ptad not defined", procName, 1);
+        return ERROR_INT("&ptas and &ptad not defined", __func__, 1);
     *pptas = *pptad = NULL;
     if (!pixs || pixGetDepth(pixs) != 1)
-        return ERROR_INT("pixs not defined or not 1 bpp", procName, 1);
+        return ERROR_INT("pixs not defined or not 1 bpp", __func__, 1);
     if (nslices < 2 || nslices > 20)
         nslices = DefaultSlices;
     if (redsweep < 1 || redsweep > 8)
@@ -429,7 +423,7 @@ PTA       *ptas, *ptad;
                                    sweeprange, sweepdelta, minbsdelta,
                                    NULL, NULL, 0);
     if (!naskew)
-        return ERROR_INT("naskew not made", procName, 1);
+        return ERROR_INT("naskew not made", __func__, 1);
 
     deg2rad = 3.14159265f / 180.f;
     w = pixGetWidth(pixs);
@@ -530,10 +524,8 @@ NUMA      *naskew, *nax, *nay;
 PIX       *pix;
 PTA       *pta;
 
-    PROCNAME("pixGetLocalSkewAngles");
-
     if (!pixs || pixGetDepth(pixs) != 1)
-        return (NUMA *)ERROR_PTR("pixs undefined or not 1 bpp", procName, NULL);
+        return (NUMA *)ERROR_PTR("pixs undefined or not 1 bpp", __func__, NULL);
     if (nslices < 2 || nslices > 20)
         nslices = DefaultSlices;
     if (redsweep < 1 || redsweep > 8)
@@ -568,7 +560,7 @@ PTA       *pta;
         /* Do linear least squares fit */
     if ((npts = ptaGetCount(pta)) < 2) {
         ptaDestroy(&pta);
-        return (NUMA *)ERROR_PTR("can't fit skew", procName, NULL);
+        return (NUMA *)ERROR_PTR("can't fit skew", __func__, NULL);
     }
     ptaGetLinearLSF(pta, &a, &b, NULL);
     if (pa) *pa = a;

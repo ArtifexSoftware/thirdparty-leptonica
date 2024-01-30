@@ -91,6 +91,12 @@
  *          static PIX      *pixLinearTRCTiled()
  *          static l_int32  *iaaGetLinearTRC()
  *
+ *      Adaptive normalization with MinMax conversion of RGB to gray,
+ *      contrast enhancement and optional 2x upscale binarization
+ *          PIX             *pixBackgroundNormTo1MinMax()
+ *          PIX             *pixConvertTo8MinMax()
+ *          static l_int32  *pixSelectiveContrastMod()
+ *
  *  Background normalization is done by generating a reduced map (or set
  *  of maps) representing the estimated background value of the
  *  input image, and using this to shift the pixel values so that
@@ -161,6 +167,8 @@ static PIX *pixLinearTRCTiled(PIX *pixd, PIX *pixs, l_int32 sx, l_int32 sy,
                               PIX *pixmin, PIX *pixmax);
 static l_int32 *iaaGetLinearTRC(l_int32 **iaa, l_int32 diff);
 
+static l_ok pixSelectiveContrastMod(PIX *pixs, l_int32 contrast);
+
 #ifndef  NO_CONSOLE_IO
 #define  DEBUG_GLOBAL    0    /*!< set to 1 to debug pixGlobalNormNoSatRGB() */
 #endif  /* ~NO_CONSOLE_IO */
@@ -188,6 +196,8 @@ static l_int32 *iaaGetLinearTRC(l_int32 **iaa, l_int32 diff);
  *                          for light text)
  *          blackval   70  (a bit more than 60)
  *          whiteval  190  (a bit less than 200)
+ *    (3) Note: the whiteval must not exceed 200, which is the value
+ *        that the background is set to in pixBackgroundNormSimple().
  * </pre>
  */
 PIX *
@@ -201,17 +211,20 @@ pixCleanBackgroundToWhite(PIX       *pixs,
 l_int32  d;
 PIX     *pixd;
 
-    PROCNAME("pixCleanBackgroundToWhite");
-
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
     d = pixGetDepth(pixs);
     if (d != 8 && d != 32)
-        return (PIX *)ERROR_PTR("depth not 8 or 32", procName, NULL);
+        return (PIX *)ERROR_PTR("depth not 8 or 32", __func__, NULL);
+    if (whiteval > 200) {
+        L_WARNING("white value %d must not exceed 200; reset to 190",
+                  __func__, whiteval);
+        whiteval = 190;
+    }
 
     pixd = pixBackgroundNormSimple(pixs, pixim, pixg);
     if (!pixd)
-        return (PIX *)ERROR_PTR("background norm failedd", procName, NULL);
+        return (PIX *)ERROR_PTR("background norm failedd", __func__, NULL);
     pixGammaTRC(pixd, pixd, gamma, blackval, whiteval);
     return pixd;
 }
@@ -267,12 +280,12 @@ pixBackgroundNormSimple(PIX  *pixs,
  * Notes:
  *    (1) This is a top-level interface for normalizing the image intensity
  *        by mapping the image so that the background is near the input
- *        value 'bgval'.
+ *        value %bgval.
  *    (2) The input image is either grayscale or rgb.
  *    (3) For each component in the input image, the background value
  *        in each tile is estimated using the values in the tile that
  *        are not part of the foreground, where the foreground is
- *        determined by the input 'thresh' argument.
+ *        determined by %thresh.
  *    (4) An optional binary mask can be specified, with the foreground
  *        pixels typically over image regions.  The resulting background
  *        map values will be determined by surrounding pixels that are
@@ -286,25 +299,29 @@ pixBackgroundNormSimple(PIX  *pixs,
  *        grayscale version can be used elsewhere.  If the input is RGB
  *        and this is not supplied, it is made internally using only
  *        the green component, and destroyed after use.
- *    (6) The dimensions of the pixel tile (sx, sy) give the amount by
+ *    (6) The dimensions of the pixel tile (%sx, %sy) give the amount
  *        by which the map is reduced in size from the input image.
- *    (7) The threshold is used to binarize the input image, in order to
+ *    (7) The input image is binarized using %thresh, in order to
  *        locate the foreground components.  If this is set too low,
  *        some actual foreground may be used to determine the maps;
  *        if set too high, there may not be enough background
- *        to determine the map values accurately.  Typically, it's
+ *        to determine the map values accurately.  Typically, it is
  *        better to err by setting the threshold too high.
- *    (8) A 'mincount' threshold is a minimum count of pixels in a
+ *    (8) A %mincount threshold is a minimum count of pixels in a
  *        tile for which a background reading is made, in order for that
  *        pixel in the map to be valid.  This number should perhaps be
  *        at least 1/3 the size of the tile.
- *    (9) A 'bgval' target background value for the normalized image.  This
+ *    (9) A %bgval target background value for the normalized image.  This
  *        should be at least 128.  If set too close to 255, some
- *        clipping will occur in the result.
- *    (10) Two factors, 'smoothx' and 'smoothy', are input for smoothing
- *        the map.  Each low-pass filter kernel dimension is
- *        is 2 * (smoothing factor) + 1, so a
- *        value of 0 means no smoothing. A value of 1 or 2 is recommended.
+ *        clipping will occur in the result.  It is recommended to use
+ *        %bgval = 200.
+ *    (10) Two factors, %smoothx and %smoothy, are input for smoothing
+ *         the map.  Each low-pass filter kernel dimension is
+ *         is 2 * (smoothing factor) + 1, so a
+ *         value of 0 means no smoothing. A value of 1 or 2 is recommended.
+ *    (11) See pixCleanBackgroundToWhite().  The recommended value for %bgval
+ *         is 200.  As done there, pixBackgroundNorm() is typically followed
+ *         by pixGammaTRC(), where the maxval must not not exceed %bgval.
  * </pre>
  */
 PIX *
@@ -323,17 +340,15 @@ l_int32  d, allfg;
 PIX     *pixm, *pixmi, *pixd;
 PIX     *pixmr, *pixmg, *pixmb, *pixmri, *pixmgi, *pixmbi;
 
-    PROCNAME("pixBackgroundNorm");
-
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
     d = pixGetDepth(pixs);
     if (d != 8 && d != 32)
-        return (PIX *)ERROR_PTR("pixs not 8 or 32 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not 8 or 32 bpp", __func__, NULL);
     if (sx < 4 || sy < 4)
-        return (PIX *)ERROR_PTR("sx and sy must be >= 4", procName, NULL);
+        return (PIX *)ERROR_PTR("sx and sy must be >= 4", __func__, NULL);
     if (mincount > sx * sy) {
-        L_WARNING("mincount too large for tile size\n", procName);
+        L_WARNING("mincount too large for tile size\n", __func__);
         mincount = (sx * sy) / 3;
     }
 
@@ -343,7 +358,7 @@ PIX     *pixmr, *pixmg, *pixmb, *pixmri, *pixmgi, *pixmbi;
         pixZero(pixim, &allfg);
         pixInvert(pixim, pixim);
         if (allfg)
-            return (PIX *)ERROR_PTR("pixim all foreground", procName, NULL);
+            return (PIX *)ERROR_PTR("pixim all foreground", __func__, NULL);
     }
 
     pixd = NULL;
@@ -351,13 +366,13 @@ PIX     *pixmr, *pixmg, *pixmb, *pixmri, *pixmgi, *pixmbi;
         pixm = NULL;
         pixGetBackgroundGrayMap(pixs, pixim, sx, sy, thresh, mincount, &pixm);
         if (!pixm) {
-            L_WARNING("map not made; return a copy of the source\n", procName);
+            L_WARNING("map not made; return a copy of the source\n", __func__);
             return pixCopy(NULL, pixs);
         }
 
         pixmi = pixGetInvBackgroundMap(pixm, bgval, smoothx, smoothy);
         if (!pixmi) {
-            L_WARNING("pixmi not made; return a copy of source\n", procName);
+            L_WARNING("pixmi not made; return a copy of source\n", __func__);
             pixDestroy(&pixm);
             return pixCopy(NULL, pixs);
         } else {
@@ -375,7 +390,7 @@ PIX     *pixmr, *pixmg, *pixmb, *pixmri, *pixmgi, *pixmbi;
             pixDestroy(&pixmr);
             pixDestroy(&pixmg);
             pixDestroy(&pixmb);
-            L_WARNING("map not made; return a copy of the source\n", procName);
+            L_WARNING("map not made; return a copy of the source\n", __func__);
             return pixCopy(NULL, pixs);
         }
 
@@ -383,7 +398,7 @@ PIX     *pixmr, *pixmg, *pixmb, *pixmri, *pixmgi, *pixmbi;
         pixmgi = pixGetInvBackgroundMap(pixmg, bgval, smoothx, smoothy);
         pixmbi = pixGetInvBackgroundMap(pixmb, bgval, smoothx, smoothy);
         if (!pixmri || !pixmgi || !pixmbi) {
-            L_WARNING("not all pixm*i are made; return src copy\n", procName);
+            L_WARNING("not all pixm*i are made; return src copy\n", __func__);
             pixd = pixCopy(NULL, pixs);
         } else {
             pixd = pixApplyInvBackgroundRGBMap(pixs, pixmri, pixmgi, pixmbi,
@@ -399,7 +414,7 @@ PIX     *pixmr, *pixmg, *pixmb, *pixmri, *pixmgi, *pixmbi;
     }
 
     if (!pixd)
-        ERROR_PTR("pixd not made", procName, NULL);
+        ERROR_PTR("pixd not made", __func__, NULL);
     pixCopyResolution(pixd, pixs);
     return pixd;
 }
@@ -455,16 +470,14 @@ l_int32    d, allfg;
 PIX       *pixm, *pixmi, *pixd;
 PIX       *pixmr, *pixmg, *pixmb, *pixmri, *pixmgi, *pixmbi;
 
-    PROCNAME("pixBackgroundNormMorph");
-
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
     d = pixGetDepth(pixs);
     if (d != 8 && d != 32)
-        return (PIX *)ERROR_PTR("pixs not 8 or 32 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not 8 or 32 bpp", __func__, NULL);
     if (reduction < 2 || reduction > 16)
         return (PIX *)ERROR_PTR("reduction must be between 2 and 16",
-                                procName, NULL);
+                                __func__, NULL);
 
         /* If pixim exists, verify that it is not all foreground. */
     if (pixim) {
@@ -472,17 +485,17 @@ PIX       *pixmr, *pixmg, *pixmb, *pixmri, *pixmgi, *pixmbi;
         pixZero(pixim, &allfg);
         pixInvert(pixim, pixim);
         if (allfg)
-            return (PIX *)ERROR_PTR("pixim all foreground", procName, NULL);
+            return (PIX *)ERROR_PTR("pixim all foreground", __func__, NULL);
     }
 
     pixd = NULL;
     if (d == 8) {
         pixGetBackgroundGrayMapMorph(pixs, pixim, reduction, size, &pixm);
         if (!pixm)
-            return (PIX *)ERROR_PTR("pixm not made", procName, NULL);
+            return (PIX *)ERROR_PTR("pixm not made", __func__, NULL);
         pixmi = pixGetInvBackgroundMap(pixm, bgval, 0, 0);
         if (!pixmi)
-            ERROR_PTR("pixmi not made", procName, NULL);
+            ERROR_PTR("pixmi not made", __func__, NULL);
         else
             pixd = pixApplyInvBackgroundGrayMap(pixs, pixmi,
                                                 reduction, reduction);
@@ -497,14 +510,14 @@ PIX       *pixmr, *pixmg, *pixmb, *pixmri, *pixmgi, *pixmbi;
             pixDestroy(&pixmr);
             pixDestroy(&pixmg);
             pixDestroy(&pixmb);
-            return (PIX *)ERROR_PTR("not all pixm*", procName, NULL);
+            return (PIX *)ERROR_PTR("not all pixm*", __func__, NULL);
         }
 
         pixmri = pixGetInvBackgroundMap(pixmr, bgval, 0, 0);
         pixmgi = pixGetInvBackgroundMap(pixmg, bgval, 0, 0);
         pixmbi = pixGetInvBackgroundMap(pixmb, bgval, 0, 0);
         if (!pixmri || !pixmgi || !pixmbi)
-            ERROR_PTR("not all pixm*i are made", procName, NULL);
+            ERROR_PTR("not all pixm*i are made", __func__, NULL);
         else
             pixd = pixApplyInvBackgroundRGBMap(pixs, pixmri, pixmgi, pixmbi,
                                                reduction, reduction);
@@ -518,7 +531,7 @@ PIX       *pixmr, *pixmg, *pixmb, *pixmri, *pixmgi, *pixmbi;
     }
 
     if (!pixd)
-        ERROR_PTR("pixd not made", procName, NULL);
+        ERROR_PTR("pixd not made", __func__, NULL);
     pixCopyResolution(pixd, pixs);
     return pixd;
 }
@@ -570,21 +583,19 @@ pixBackgroundNormGrayArray(PIX     *pixs,
 l_int32  allfg;
 PIX     *pixm;
 
-    PROCNAME("pixBackgroundNormGrayArray");
-
     if (!ppixd)
-        return ERROR_INT("&pixd not defined", procName, 1);
+        return ERROR_INT("&pixd not defined", __func__, 1);
     *ppixd = NULL;
     if (!pixs || pixGetDepth(pixs) != 8)
-        return ERROR_INT("pixs not defined or not 8 bpp", procName, 1);
+        return ERROR_INT("pixs not defined or not 8 bpp", __func__, 1);
     if (pixGetColormap(pixs))
-        return ERROR_INT("pixs is colormapped", procName, 1);
+        return ERROR_INT("pixs is colormapped", __func__, 1);
     if (pixim && pixGetDepth(pixim) != 1)
-        return ERROR_INT("pixim not 1 bpp", procName, 1);
+        return ERROR_INT("pixim not 1 bpp", __func__, 1);
     if (sx < 4 || sy < 4)
-        return ERROR_INT("sx and sy must be >= 4", procName, 1);
+        return ERROR_INT("sx and sy must be >= 4", __func__, 1);
     if (mincount > sx * sy) {
-        L_WARNING("mincount too large for tile size\n", procName);
+        L_WARNING("mincount too large for tile size\n", __func__);
         mincount = (sx * sy) / 3;
     }
 
@@ -594,12 +605,12 @@ PIX     *pixm;
         pixZero(pixim, &allfg);
         pixInvert(pixim, pixim);
         if (allfg)
-            return ERROR_INT("pixim all foreground", procName, 1);
+            return ERROR_INT("pixim all foreground", __func__, 1);
     }
 
     pixGetBackgroundGrayMap(pixs, pixim, sx, sy, thresh, mincount, &pixm);
     if (!pixm)
-        return ERROR_INT("pixm not made", procName, 1);
+        return ERROR_INT("pixm not made", __func__, 1);
     *ppixd = pixGetInvBackgroundMap(pixm, bgval, smoothx, smoothy);
     pixCopyResolution(*ppixd, pixs);
     pixDestroy(&pixm);
@@ -650,21 +661,19 @@ pixBackgroundNormRGBArrays(PIX     *pixs,
 l_int32  allfg;
 PIX     *pixmr, *pixmg, *pixmb;
 
-    PROCNAME("pixBackgroundNormRGBArrays");
-
     if (!ppixr || !ppixg || !ppixb)
-        return ERROR_INT("&pixr, &pixg, &pixb not all defined", procName, 1);
+        return ERROR_INT("&pixr, &pixg, &pixb not all defined", __func__, 1);
     *ppixr = *ppixg = *ppixb = NULL;
     if (!pixs)
-        return ERROR_INT("pixs not defined", procName, 1);
+        return ERROR_INT("pixs not defined", __func__, 1);
     if (pixGetDepth(pixs) != 32)
-        return ERROR_INT("pixs not 32 bpp", procName, 1);
+        return ERROR_INT("pixs not 32 bpp", __func__, 1);
     if (pixim && pixGetDepth(pixim) != 1)
-        return ERROR_INT("pixim not 1 bpp", procName, 1);
+        return ERROR_INT("pixim not 1 bpp", __func__, 1);
     if (sx < 4 || sy < 4)
-        return ERROR_INT("sx and sy must be >= 4", procName, 1);
+        return ERROR_INT("sx and sy must be >= 4", __func__, 1);
     if (mincount > sx * sy) {
-        L_WARNING("mincount too large for tile size\n", procName);
+        L_WARNING("mincount too large for tile size\n", __func__);
         mincount = (sx * sy) / 3;
     }
 
@@ -674,7 +683,7 @@ PIX     *pixmr, *pixmg, *pixmb;
         pixZero(pixim, &allfg);
         pixInvert(pixim, pixim);
         if (allfg)
-            return ERROR_INT("pixim all foreground", procName, 1);
+            return ERROR_INT("pixim all foreground", __func__, 1);
     }
 
     pixGetBackgroundRGBMap(pixs, pixim, pixg, sx, sy, thresh, mincount,
@@ -683,7 +692,7 @@ PIX     *pixmr, *pixmg, *pixmb;
         pixDestroy(&pixmr);
         pixDestroy(&pixmg);
         pixDestroy(&pixmb);
-        return ERROR_INT("not all pixm* made", procName, 1);
+        return ERROR_INT("not all pixm* made", __func__, 1);
     }
 
     *ppixr = pixGetInvBackgroundMap(pixmr, bgval, smoothx, smoothy);
@@ -726,19 +735,17 @@ pixBackgroundNormGrayArrayMorph(PIX     *pixs,
 l_int32  allfg;
 PIX     *pixm;
 
-    PROCNAME("pixBackgroundNormGrayArrayMorph");
-
     if (!ppixd)
-        return ERROR_INT("&pixd not defined", procName, 1);
+        return ERROR_INT("&pixd not defined", __func__, 1);
     *ppixd = NULL;
     if (!pixs)
-        return ERROR_INT("pixs not defined", procName, 1);
+        return ERROR_INT("pixs not defined", __func__, 1);
     if (pixGetDepth(pixs) != 8)
-        return ERROR_INT("pixs not 8 bpp", procName, 1);
+        return ERROR_INT("pixs not 8 bpp", __func__, 1);
     if (pixim && pixGetDepth(pixim) != 1)
-        return ERROR_INT("pixim not 1 bpp", procName, 1);
+        return ERROR_INT("pixim not 1 bpp", __func__, 1);
     if (reduction < 2 || reduction > 16)
-        return ERROR_INT("reduction must be between 2 and 16", procName, 1);
+        return ERROR_INT("reduction must be between 2 and 16", __func__, 1);
 
         /* If pixim exists, verify that it is not all foreground. */
     if (pixim) {
@@ -746,12 +753,12 @@ PIX     *pixm;
         pixZero(pixim, &allfg);
         pixInvert(pixim, pixim);
         if (allfg)
-            return ERROR_INT("pixim all foreground", procName, 1);
+            return ERROR_INT("pixim all foreground", __func__, 1);
     }
 
     pixGetBackgroundGrayMapMorph(pixs, pixim, reduction, size, &pixm);
     if (!pixm)
-        return ERROR_INT("pixm not made", procName, 1);
+        return ERROR_INT("pixm not made", __func__, 1);
     *ppixd = pixGetInvBackgroundMap(pixm, bgval, 0, 0);
     pixCopyResolution(*ppixd, pixs);
     pixDestroy(&pixm);
@@ -793,19 +800,17 @@ pixBackgroundNormRGBArraysMorph(PIX     *pixs,
 l_int32  allfg;
 PIX     *pixmr, *pixmg, *pixmb;
 
-    PROCNAME("pixBackgroundNormRGBArraysMorph");
-
     if (!ppixr || !ppixg || !ppixb)
-        return ERROR_INT("&pixr, &pixg, &pixb not all defined", procName, 1);
+        return ERROR_INT("&pixr, &pixg, &pixb not all defined", __func__, 1);
     *ppixr = *ppixg = *ppixb = NULL;
     if (!pixs)
-        return ERROR_INT("pixs not defined", procName, 1);
+        return ERROR_INT("pixs not defined", __func__, 1);
     if (pixGetDepth(pixs) != 32)
-        return ERROR_INT("pixs not 32 bpp", procName, 1);
+        return ERROR_INT("pixs not 32 bpp", __func__, 1);
     if (pixim && pixGetDepth(pixim) != 1)
-        return ERROR_INT("pixim not 1 bpp", procName, 1);
+        return ERROR_INT("pixim not 1 bpp", __func__, 1);
     if (reduction < 2 || reduction > 16)
-        return ERROR_INT("reduction must be between 2 and 16", procName, 1);
+        return ERROR_INT("reduction must be between 2 and 16", __func__, 1);
 
         /* If pixim exists, verify that it is not all foreground. */
     if (pixim) {
@@ -813,7 +818,7 @@ PIX     *pixmr, *pixmg, *pixmb;
         pixZero(pixim, &allfg);
         pixInvert(pixim, pixim);
         if (allfg)
-            return ERROR_INT("pixim all foreground", procName, 1);
+            return ERROR_INT("pixim all foreground", __func__, 1);
     }
 
     pixGetBackgroundRGBMapMorph(pixs, pixim, reduction, size,
@@ -822,7 +827,7 @@ PIX     *pixmr, *pixmg, *pixmb;
         pixDestroy(&pixmr);
         pixDestroy(&pixmg);
         pixDestroy(&pixmb);
-        return ERROR_INT("not all pixm* made", procName, 1);
+        return ERROR_INT("not all pixm* made", __func__, 1);
     }
 
     *ppixr = pixGetInvBackgroundMap(pixmr, bgval, 0, 0);
@@ -874,21 +879,19 @@ l_uint32  *datas, *dataim, *datad, *dataf, *lines, *lineim, *lined, *linef;
 l_float32  scalex, scaley;
 PIX       *pixd, *piximi, *pixb, *pixf, *pixims;
 
-    PROCNAME("pixGetBackgroundGrayMap");
-
     if (!ppixd)
-        return ERROR_INT("&pixd not defined", procName, 1);
+        return ERROR_INT("&pixd not defined", __func__, 1);
     *ppixd = NULL;
     if (!pixs || pixGetDepth(pixs) != 8)
-        return ERROR_INT("pixs not defined or not 8 bpp", procName, 1);
+        return ERROR_INT("pixs not defined or not 8 bpp", __func__, 1);
     if (pixGetColormap(pixs))
-        return ERROR_INT("pixs is colormapped", procName, 1);
+        return ERROR_INT("pixs is colormapped", __func__, 1);
     if (pixim && pixGetDepth(pixim) != 1)
-        return ERROR_INT("pixim not 1 bpp", procName, 1);
+        return ERROR_INT("pixim not 1 bpp", __func__, 1);
     if (sx < 4 || sy < 4)
-        return ERROR_INT("sx and sy must be >= 4", procName, 1);
+        return ERROR_INT("sx and sy must be >= 4", __func__, 1);
     if (mincount > sx * sy) {
-        L_WARNING("mincount too large for tile size\n", procName);
+        L_WARNING("mincount too large for tile size\n", __func__);
         mincount = (sx * sy) / 3;
     }
 
@@ -900,7 +903,7 @@ PIX       *pixd, *piximi, *pixb, *pixf, *pixims;
         pixZero(piximi, &empty);
         pixDestroy(&piximi);
         if (empty)
-            return ERROR_INT("pixim all fg; no background", procName, 1);
+            return ERROR_INT("pixim all fg; no background", __func__, 1);
         pixZero(pixim, &empty);
         if (!empty)  /* there are fg pixels in pixim */
             fgpixels = 1;
@@ -913,7 +916,7 @@ PIX       *pixd, *piximi, *pixb, *pixf, *pixims;
     pixf = pixMorphSequence(pixb, "d7.1 + d1.7", 0);
     pixDestroy(&pixb);
     if (!pixf)
-        return ERROR_INT("pixf not made", procName, 1);
+        return ERROR_INT("pixf not made", __func__, 1);
 
 
     /* ------------- Set up the output map pixd --------------- */
@@ -993,7 +996,7 @@ PIX       *pixd, *piximi, *pixb, *pixf, *pixims;
         /* Fill all the holes in the map. */
     if (pixFillMapHoles(pixd, nx, ny, L_FILL_BLACK)) {
         pixDestroy(&pixd);
-        L_WARNING("can't make the map\n", procName);
+        L_WARNING("can't make the map\n", __func__);
         return 1;
     }
 
@@ -1061,21 +1064,19 @@ l_float32  scalex, scaley;
 PIX       *piximi, *pixgc, *pixb, *pixf, *pixims;
 PIX       *pixmr, *pixmg, *pixmb;
 
-    PROCNAME("pixGetBackgroundRGBMap");
-
     if (!ppixmr || !ppixmg || !ppixmb)
-        return ERROR_INT("&pixm* not all defined", procName, 1);
+        return ERROR_INT("&pixm* not all defined", __func__, 1);
     *ppixmr = *ppixmg = *ppixmb = NULL;
     if (!pixs)
-        return ERROR_INT("pixs not defined", procName, 1);
+        return ERROR_INT("pixs not defined", __func__, 1);
     if (pixGetDepth(pixs) != 32)
-        return ERROR_INT("pixs not 32 bpp", procName, 1);
+        return ERROR_INT("pixs not 32 bpp", __func__, 1);
     if (pixim && pixGetDepth(pixim) != 1)
-        return ERROR_INT("pixim not 1 bpp", procName, 1);
+        return ERROR_INT("pixim not 1 bpp", __func__, 1);
     if (sx < 4 || sy < 4)
-        return ERROR_INT("sx and sy must be >= 4", procName, 1);
+        return ERROR_INT("sx and sy must be >= 4", __func__, 1);
     if (mincount > sx * sy) {
-        L_WARNING("mincount too large for tile size\n", procName);
+        L_WARNING("mincount too large for tile size\n", __func__);
         mincount = (sx * sy) / 3;
     }
 
@@ -1086,7 +1087,7 @@ PIX       *pixmr, *pixmg, *pixmb;
         pixZero(piximi, &empty);
         pixDestroy(&piximi);
         if (empty)
-            return ERROR_INT("pixim all fg; no background", procName, 1);
+            return ERROR_INT("pixim all fg; no background", __func__, 1);
         pixZero(pixim, &empty);
         if (!empty)  /* there are fg pixels in pixim */
             fgpixels = 1;
@@ -1187,7 +1188,7 @@ PIX       *pixmr, *pixmg, *pixmb;
         pixDestroy(&pixmr);
         pixDestroy(&pixmg);
         pixDestroy(&pixmb);
-        L_WARNING("can't make the maps\n", procName);
+        L_WARNING("can't make the maps\n", __func__);
         return 1;
     }
 
@@ -1235,17 +1236,15 @@ l_int32    nx, ny, empty, fgpixels;
 l_float32  scale;
 PIX       *pixm, *pix1, *pix2, *pix3, *pixims;
 
-    PROCNAME("pixGetBackgroundGrayMapMorph");
-
     if (!ppixm)
-        return ERROR_INT("&pixm not defined", procName, 1);
+        return ERROR_INT("&pixm not defined", __func__, 1);
     *ppixm = NULL;
     if (!pixs || pixGetDepth(pixs) != 8)
-        return ERROR_INT("pixs not defined or not 8 bpp", procName, 1);
+        return ERROR_INT("pixs not defined or not 8 bpp", __func__, 1);
     if (pixGetColormap(pixs))
-        return ERROR_INT("pixs is colormapped", procName, 1);
+        return ERROR_INT("pixs is colormapped", __func__, 1);
     if (pixim && pixGetDepth(pixim) != 1)
-        return ERROR_INT("pixim not 1 bpp", procName, 1);
+        return ERROR_INT("pixim not 1 bpp", __func__, 1);
 
         /* Evaluate the mask pixim and make sure it is not all foreground. */
     fgpixels = 0;  /* boolean for existence of fg mask pixels */
@@ -1253,7 +1252,7 @@ PIX       *pixm, *pix1, *pix2, *pix3, *pixims;
         pixInvert(pixim, pixim);  /* set background pixels to 1 */
         pixZero(pixim, &empty);
         if (empty)
-            return ERROR_INT("pixim all fg; no background", procName, 1);
+            return ERROR_INT("pixim all fg; no background", __func__, 1);
         pixInvert(pixim, pixim);  /* revert to original mask */
         pixZero(pixim, &empty);
         if (!empty)  /* there are fg pixels in pixim */
@@ -1286,7 +1285,7 @@ PIX       *pixm, *pix1, *pix2, *pix3, *pixims;
     if (pixFillMapHoles(pixm, nx, ny, L_FILL_BLACK)) {
         pixDestroy(&pixm);
         pixDestroy(&pixims);
-        L_WARNING("can't make the map\n", procName);
+        L_WARNING("can't make the map\n", __func__);
         return 1;
     }
 
@@ -1328,17 +1327,15 @@ l_int32    nx, ny, empty, fgpixels;
 l_float32  scale;
 PIX       *pixm, *pixmr, *pixmg, *pixmb, *pix1, *pix2, *pix3, *pixims;
 
-    PROCNAME("pixGetBackgroundRGBMapMorph");
-
     if (!ppixmr || !ppixmg || !ppixmb)
-        return ERROR_INT("&pixm* not all defined", procName, 1);
+        return ERROR_INT("&pixm* not all defined", __func__, 1);
     *ppixmr = *ppixmg = *ppixmb = NULL;
     if (!pixs)
-        return ERROR_INT("pixs not defined", procName, 1);
+        return ERROR_INT("pixs not defined", __func__, 1);
     if (pixGetDepth(pixs) != 32)
-        return ERROR_INT("pixs not 32 bpp", procName, 1);
+        return ERROR_INT("pixs not 32 bpp", __func__, 1);
     if (pixim && pixGetDepth(pixim) != 1)
-        return ERROR_INT("pixim not 1 bpp", procName, 1);
+        return ERROR_INT("pixim not 1 bpp", __func__, 1);
 
         /* Evaluate the mask pixim and make sure it is not all foreground. */
     fgpixels = 0;  /* boolean for existence of fg mask pixels */
@@ -1346,7 +1343,7 @@ PIX       *pixm, *pixmr, *pixmg, *pixmb, *pix1, *pix2, *pix3, *pixims;
         pixInvert(pixim, pixim);  /* set background pixels to 1 */
         pixZero(pixim, &empty);
         if (empty)
-            return ERROR_INT("pixim all fg; no background", procName, 1);
+            return ERROR_INT("pixim all fg; no background", __func__, 1);
         pixInvert(pixim, pixim);  /* revert to original mask */
         pixZero(pixim, &empty);
         if (!empty)  /* there are fg pixels in pixim */
@@ -1409,7 +1406,7 @@ PIX       *pixm, *pixmr, *pixmg, *pixmb, *pix1, *pix2, *pix3, *pixims;
         pixDestroy(&pixmg);
         pixDestroy(&pixmb);
         pixDestroy(&pixims);
-        L_WARNING("can't make the maps\n", procName);
+        L_WARNING("can't make the maps\n", __func__);
         return 1;
     }
 
@@ -1479,12 +1476,10 @@ l_int32   w, h, y, nmiss, goodcol, i, j, found, ival, valtest;
 l_uint32  val, lastval;
 NUMA     *na;  /* indicates if there is any data in the column */
 
-    PROCNAME("pixFillMapHoles");
-
     if (!pix || pixGetDepth(pix) != 8)
-        return ERROR_INT("pix not defined or not 8 bpp", procName, 1);
+        return ERROR_INT("pix not defined or not 8 bpp", __func__, 1);
     if (pixGetColormap(pix))
-        return ERROR_INT("pix is colormapped", procName, 1);
+        return ERROR_INT("pix is colormapped", __func__, 1);
 
     /* ------------- Fill holes in the mapping image columns ----------- */
     pixGetDimensions(pix, &w, &h, NULL);
@@ -1522,7 +1517,7 @@ NUMA     *na;  /* indicates if there is any data in the column */
 
     if (nmiss == nx) {  /* no data in any column! */
         numaDestroy(&na);
-        L_WARNING("no bg found; no data in any column\n", procName);
+        L_WARNING("no bg found; no data in any column\n", __func__);
         return 1;
     }
 
@@ -1580,17 +1575,15 @@ l_int32   w, h, i, j;
 l_uint32  val;
 PIX      *pixd;
 
-    PROCNAME("pixExtendByReplication");
-
     if (!pixs || pixGetDepth(pixs) != 8)
-        return (PIX *)ERROR_PTR("pixs undefined or not 8 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs undefined or not 8 bpp", __func__, NULL);
 
     if (addw == 0 && addh == 0)
         return pixCopy(NULL, pixs);
 
     pixGetDimensions(pixs, &w, &h, NULL);
     if ((pixd = pixCreate(w + addw, h + addh, 8)) == NULL)
-        return (PIX *)ERROR_PTR("pixd not made", procName, NULL);
+        return (PIX *)ERROR_PTR("pixd not made", __func__, NULL);
     pixRasterop(pixd, 0, 0, w, h, PIX_SRC, pixs, 0, 0);
 
     if (addw > 0) {
@@ -1645,21 +1638,19 @@ BOXA      *boxa;
 PIX       *pixmc;
 PIXA      *pixa;
 
-    PROCNAME("pixSmoothConnectedRegions");
-
     if (!pixs || pixGetDepth(pixs) != 8)
-        return ERROR_INT("pixs not defined or not 8 bpp", procName, 1);
+        return ERROR_INT("pixs not defined or not 8 bpp", __func__, 1);
     if (pixGetColormap(pixs))
-        return ERROR_INT("pixs has colormap", procName, 1);
+        return ERROR_INT("pixs has colormap", __func__, 1);
     if (!pixm) {
-        L_INFO("pixm not defined\n", procName);
+        L_INFO("pixm not defined\n", __func__);
         return 0;
     }
     if (pixGetDepth(pixm) != 1)
-        return ERROR_INT("pixm not 1 bpp", procName, 1);
+        return ERROR_INT("pixm not 1 bpp", __func__, 1);
     pixZero(pixm, &empty);
     if (empty) {
-        L_INFO("pixm has no fg pixels; nothing to do\n", procName);
+        L_INFO("pixm has no fg pixels; nothing to do\n", __func__);
         return 0;
     }
 
@@ -1667,7 +1658,7 @@ PIXA      *pixa;
     n = boxaGetCount(boxa);
     for (i = 0; i < n; i++) {
         if ((pixmc = pixaGetPix(pixa, i, L_CLONE)) == NULL) {
-            L_WARNING("missing pixmc!\n", procName);
+            L_WARNING("missing pixmc!\n", __func__);
             continue;
         }
         boxaGetBoxGeometry(boxa, i, &x, &y, NULL, NULL);
@@ -1735,20 +1726,18 @@ l_int32  w, h, d, wd, hd;
 l_int32  empty, fgpixels;
 PIX     *pixd, *piximi, *pixim2, *pixims, *pixs2, *pixb, *pixt1, *pixt2, *pixt3;
 
-    PROCNAME("pixGetForegroundGrayMap");
-
     if (!ppixd)
-        return ERROR_INT("&pixd not defined", procName, 1);
+        return ERROR_INT("&pixd not defined", __func__, 1);
     *ppixd = NULL;
     if (!pixs)
-        return ERROR_INT("pixs not defined", procName, 1);
+        return ERROR_INT("pixs not defined", __func__, 1);
     pixGetDimensions(pixs, &w, &h, &d);
     if (d != 8)
-        return ERROR_INT("pixs not 8 bpp", procName, 1);
+        return ERROR_INT("pixs not 8 bpp", __func__, 1);
     if (pixim && pixGetDepth(pixim) != 1)
-        return ERROR_INT("pixim not 1 bpp", procName, 1);
+        return ERROR_INT("pixim not 1 bpp", __func__, 1);
     if (sx < 2 || sy < 2)
-        return ERROR_INT("sx and sy must be >= 2", procName, 1);
+        return ERROR_INT("sx and sy must be >= 2", __func__, 1);
 
         /* Generate pixd, which is reduced by the factors (sx, sy). */
     wd = (w + sx - 1) / sx;
@@ -1846,15 +1835,13 @@ l_int32    val, val16;
 l_uint32  *datasm, *datad, *linesm, *lined;
 PIX       *pixsm, *pixd;
 
-    PROCNAME("pixGetInvBackgroundMap");
-
     if (!pixs || pixGetDepth(pixs) != 8)
-        return (PIX *)ERROR_PTR("pixs undefined or not 8 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs undefined or not 8 bpp", __func__, NULL);
     if (pixGetColormap(pixs))
-        return (PIX *)ERROR_PTR("pixs has colormap", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs has colormap", __func__, NULL);
     pixGetDimensions(pixs, &w, &h, NULL);
     if (w < 5 || h < 5)
-        return (PIX *)ERROR_PTR("w and h must be >= 5", procName, NULL);
+        return (PIX *)ERROR_PTR("w and h must be >= 5", __func__, NULL);
 
         /* smooth the map image */
     pixsm = pixBlockconv(pixs, smoothx, smoothy);
@@ -1873,7 +1860,7 @@ PIX       *pixsm, *pixd;
             if (val > 0)
                 val16 = (256 * bgval) / val;
             else {  /* shouldn't happen */
-                L_WARNING("smoothed bg has 0 pixel!\n", procName);
+                L_WARNING("smoothed bg has 0 pixel!\n", __func__);
                 val16 = bgval / 2;
             }
             SET_DATA_TWO_BYTES(lined, j, val16);
@@ -1910,23 +1897,21 @@ l_uint32   val16;
 l_uint32  *datas, *datad, *lines, *lined, *flines, *flined;
 PIX       *pixd;
 
-    PROCNAME("pixApplyInvBackgroundGrayMap");
-
     if (!pixs || pixGetDepth(pixs) != 8)
-        return (PIX *)ERROR_PTR("pixs undefined or not 8 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs undefined or not 8 bpp", __func__, NULL);
     if (pixGetColormap(pixs))
-        return (PIX *)ERROR_PTR("pixs has colormap", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs has colormap", __func__, NULL);
     if (!pixm || pixGetDepth(pixm) != 16)
-        return (PIX *)ERROR_PTR("pixm undefined or not 16 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pixm undefined or not 16 bpp", __func__, NULL);
     if (sx == 0 || sy == 0)
-        return (PIX *)ERROR_PTR("invalid sx and/or sy", procName, NULL);
+        return (PIX *)ERROR_PTR("invalid sx and/or sy", __func__, NULL);
 
     datas = pixGetData(pixs);
     wpls = pixGetWpl(pixs);
     pixGetDimensions(pixs, &w, &h, NULL);
     pixGetDimensions(pixm, &wm, &hm, NULL);
     if ((pixd = pixCreateTemplate(pixs)) == NULL)
-        return (PIX *)ERROR_PTR("pixd not made", procName, NULL);
+        return (PIX *)ERROR_PTR("pixd not made", __func__, NULL);
     datad = pixGetData(pixd);
     wpld = pixGetWpl(pixd);
     for (i = 0; i < hm; i++) {
@@ -1979,19 +1964,17 @@ l_uint32   rval16, gval16, bval16;
 l_uint32  *datas, *datad, *lines, *lined, *flines, *flined;
 PIX       *pixd;
 
-    PROCNAME("pixApplyInvBackgroundRGBMap");
-
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
     if (pixGetDepth(pixs) != 32)
-        return (PIX *)ERROR_PTR("pixs not 32 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not 32 bpp", __func__, NULL);
     if (!pixmr || !pixmg || !pixmb)
-        return (PIX *)ERROR_PTR("pix maps not all defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pix maps not all defined", __func__, NULL);
     if (pixGetDepth(pixmr) != 16 || pixGetDepth(pixmg) != 16 ||
         pixGetDepth(pixmb) != 16)
-        return (PIX *)ERROR_PTR("pix maps not all 16 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pix maps not all 16 bpp", __func__, NULL);
     if (sx == 0 || sy == 0)
-        return (PIX *)ERROR_PTR("invalid sx and/or sy", procName, NULL);
+        return (PIX *)ERROR_PTR("invalid sx and/or sy", __func__, NULL);
 
     datas = pixGetData(pixs);
     wpls = pixGetWpl(pixs);
@@ -2000,7 +1983,7 @@ PIX       *pixd;
     wm = pixGetWidth(pixmr);
     hm = pixGetHeight(pixmr);
     if ((pixd = pixCreateTemplate(pixs)) == NULL)
-        return (PIX *)ERROR_PTR("pixd not made", procName, NULL);
+        return (PIX *)ERROR_PTR("pixd not made", __func__, NULL);
     datad = pixGetData(pixd);
     wpld = pixGetWpl(pixd);
     for (i = 0; i < hm; i++) {
@@ -2073,17 +2056,15 @@ l_uint32  *datas, *datag, *datad, *lines, *lineg, *lined;
 l_float32  fval;
 PIX       *pixd;
 
-    PROCNAME("pixApplyVariableGrayMap");
-
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
     if (!pixg)
-        return (PIX *)ERROR_PTR("pixg not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixg not defined", __func__, NULL);
     if (!pixSizesEqual(pixs, pixg))
-        return (PIX *)ERROR_PTR("pix sizes not equal", procName, NULL);
+        return (PIX *)ERROR_PTR("pix sizes not equal", __func__, NULL);
     pixGetDimensions(pixs, &w, &h, &d);
     if (d != 8)
-        return (PIX *)ERROR_PTR("depth not 8 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("depth not 8 bpp", __func__, NULL);
 
         /* Generate a LUT for the mapping if the image is large enough
          * to warrant the overhead.  The LUT is of size 2^16.  For the
@@ -2094,8 +2075,7 @@ PIX       *pixd;
          * 4x faster when using the LUT.  C'est la vie.  */
     lut = NULL;
     if (w * h > 100000) {  /* more pixels than 2^16 */
-        if ((lut = (l_uint8 *)LEPT_CALLOC(0x10000, sizeof(l_uint8))) == NULL)
-            return (PIX *)ERROR_PTR("lut not made", procName, NULL);
+        lut = (l_uint8 *)LEPT_CALLOC(0x10000, sizeof(l_uint8));
         for (i = 0; i < 256; i++) {
             for (j = 0; j < 256; j++) {
                 fval = (l_float32)(i * target) / (j + 0.5);
@@ -2104,9 +2084,9 @@ PIX       *pixd;
         }
     }
 
-    if ((pixd = pixCreateNoInit(w, h, 8)) == NULL) {
+    if ((pixd = pixCreate(w, h, 8)) == NULL) {
         LEPT_FREE(lut);
-        return (PIX *)ERROR_PTR("pixd not made", procName, NULL);
+        return (PIX *)ERROR_PTR("pixd not made", __func__, NULL);
     }
     pixCopyResolution(pixd, pixs);
     datad = pixGetData(pixd);
@@ -2194,22 +2174,20 @@ l_uint32  *data, *line;
 NUMA      *nar, *nag, *nab;
 PIXCMAP   *cmap;
 
-    PROCNAME("pixGlobalNormRGB");
-
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
     cmap = pixGetColormap(pixs);
     pixGetDimensions(pixs, &w, &h, &d);
     if (!cmap && d != 32)
-        return (PIX *)ERROR_PTR("pixs not cmapped or 32 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not cmapped or 32 bpp", __func__, NULL);
     if (mapval <= 0) {
-        L_WARNING("mapval must be > 0; setting to 255\n", procName);
+        L_WARNING("mapval must be > 0; setting to 255\n", __func__);
         mapval = 255;
     }
 
         /* Prepare pixd to be a copy of pixs */
     if ((pixd = pixCopy(pixd, pixs)) == NULL)
-        return (PIX *)ERROR_PTR("pixd not made", procName, NULL);
+        return (PIX *)ERROR_PTR("pixd not made", __func__, NULL);
 
         /* Generate the TRC maps for each component.  Make sure the
          * upper range for each color is greater than zero. */
@@ -2222,7 +2200,7 @@ PIXCMAP   *cmap;
     garray = numaGetIArray(nag);
     barray = numaGetIArray(nab);
     if (!nar || !nag || !nab || !rarray || !garray || !barray) {
-        L_ERROR("allocation failure in arrays\n", procName);
+        L_ERROR("allocation failure in arrays\n", __func__);
         goto cleanup_arrays;
     }
 
@@ -2302,18 +2280,16 @@ l_int32    mapval;
 l_float32  rankrval, rankgval, rankbval;
 l_float32  rfract, gfract, bfract, maxfract;
 
-    PROCNAME("pixGlobalNormNoSatRGB");
-
     if (!pixs)
-        return (PIX *)ERROR_PTR("pixs not defined", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
     if (pixGetDepth(pixs) != 32)
-        return (PIX *)ERROR_PTR("pixs not 32 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs not 32 bpp", __func__, NULL);
     if (factor < 1)
-        return (PIX *)ERROR_PTR("sampling factor < 1", procName, NULL);
+        return (PIX *)ERROR_PTR("sampling factor < 1", __func__, NULL);
     if (rank < 0.0 || rank > 1.0)
-        return (PIX *)ERROR_PTR("rank not in [0.0 ... 1.0]", procName, NULL);
+        return (PIX *)ERROR_PTR("rank not in [0.0 ... 1.0]", __func__, NULL);
     if (rval <= 0 || gval <= 0 || bval <= 0)
-        return (PIX *)ERROR_PTR("invalid estim. color values", procName, NULL);
+        return (PIX *)ERROR_PTR("invalid estim. color values", __func__, NULL);
 
         /* The max value for each component may be larger than the
          * input estimated background value.  In that case, mapping
@@ -2407,19 +2383,17 @@ pixThresholdSpreadNorm(PIX       *pixs,
 {
 PIX  *pixe, *pixet, *pixsd, *pixg1, *pixg2, *pixth;
 
-    PROCNAME("pixThresholdSpreadNorm");
-
     if (ppixth) *ppixth = NULL;
     if (ppixb) *ppixb = NULL;
     if (ppixd) *ppixd = NULL;
     if (!pixs || pixGetDepth(pixs) != 8)
-        return ERROR_INT("pixs not defined or not 8 bpp", procName, 1);
+        return ERROR_INT("pixs not defined or not 8 bpp", __func__, 1);
     if (pixGetColormap(pixs))
-        return ERROR_INT("pixs is colormapped", procName, 1);
+        return ERROR_INT("pixs is colormapped", __func__, 1);
     if (!ppixth && !ppixb && !ppixd)
-        return ERROR_INT("no output requested", procName, 1);
+        return ERROR_INT("no output requested", __func__, 1);
     if (filtertype != L_SOBEL_EDGE && filtertype != L_TWO_SIDED_EDGE)
-        return ERROR_INT("invalid filter type", procName, 1);
+        return ERROR_INT("invalid filter type", __func__, 1);
 
         /* Get the thresholded edge pixels.  These are the ones
          * that have values in pixs near the local optimal fg/bg threshold. */
@@ -2508,20 +2482,18 @@ pixBackgroundNormFlex(PIX     *pixs,
 l_float32  scalex, scaley;
 PIX       *pixt, *pixsd, *pixmin, *pixbg, *pixbgi, *pixd;
 
-    PROCNAME("pixBackgroundNormFlex");
-
     if (!pixs || pixGetDepth(pixs) != 8)
-        return (PIX *)ERROR_PTR("pixs undefined or not 8 bpp", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs undefined or not 8 bpp", __func__, NULL);
     if (pixGetColormap(pixs))
-        return (PIX *)ERROR_PTR("pixs is colormapped", procName, NULL);
+        return (PIX *)ERROR_PTR("pixs is colormapped", __func__, NULL);
     if (sx < 3 || sy < 3)
-        return (PIX *)ERROR_PTR("sx and/or sy less than 3", procName, NULL);
+        return (PIX *)ERROR_PTR("sx and/or sy less than 3", __func__, NULL);
     if (sx > 10 || sy > 10)
-        return (PIX *)ERROR_PTR("sx and/or sy exceed 10", procName, NULL);
+        return (PIX *)ERROR_PTR("sx and/or sy exceed 10", __func__, NULL);
     if (smoothx < 1 || smoothy < 1)
-        return (PIX *)ERROR_PTR("smooth params less than 1", procName, NULL);
+        return (PIX *)ERROR_PTR("smooth params less than 1", __func__, NULL);
     if (smoothx > 3 || smoothy > 3)
-        return (PIX *)ERROR_PTR("smooth params exceed 3", procName, NULL);
+        return (PIX *)ERROR_PTR("smooth params exceed 3", __func__, NULL);
 
         /* Generate the bg estimate using smoothed average with subsampling */
     scalex = 1. / (l_float32)sx;
@@ -2603,20 +2575,18 @@ pixContrastNorm(PIX       *pixd,
 {
 PIX  *pixmin, *pixmax;
 
-    PROCNAME("pixContrastNorm");
-
     if (!pixs || pixGetDepth(pixs) != 8)
-        return (PIX *)ERROR_PTR("pixs undefined or not 8 bpp", procName, pixd);
+        return (PIX *)ERROR_PTR("pixs undefined or not 8 bpp", __func__, pixd);
     if (pixd && pixd != pixs)
-        return (PIX *)ERROR_PTR("pixd not null or == pixs", procName, pixd);
+        return (PIX *)ERROR_PTR("pixd not null or == pixs", __func__, pixd);
     if (pixGetColormap(pixs))
-        return (PIX *)ERROR_PTR("pixs is colormapped", procName, pixd);
+        return (PIX *)ERROR_PTR("pixs is colormapped", __func__, pixd);
     if (sx < 5 || sy < 5)
-        return (PIX *)ERROR_PTR("sx and/or sy less than 5", procName, pixd);
+        return (PIX *)ERROR_PTR("sx and/or sy less than 5", __func__, pixd);
     if (smoothx < 0 || smoothy < 0)
-        return (PIX *)ERROR_PTR("smooth params less than 0", procName, pixd);
+        return (PIX *)ERROR_PTR("smooth params less than 0", __func__, pixd);
     if (smoothx > 8 || smoothy > 8)
-        return (PIX *)ERROR_PTR("smooth params exceed 8", procName, pixd);
+        return (PIX *)ERROR_PTR("smooth params exceed 8", __func__, pixd);
 
         /* Get the min and max pixel values in each tile, and represent
          * each value as a pixel in pixmin and pixmax, respectively. */
@@ -2665,22 +2635,20 @@ pixMinMaxTiles(PIX     *pixs,
 l_int32  w, h;
 PIX     *pixmin1, *pixmax1, *pixmin2, *pixmax2;
 
-    PROCNAME("pixMinMaxTiles");
-
     if (ppixmin) *ppixmin = NULL;
     if (ppixmax) *ppixmax = NULL;
     if (!ppixmin || !ppixmax)
-        return ERROR_INT("&pixmin or &pixmax undefined", procName, 1);
+        return ERROR_INT("&pixmin or &pixmax undefined", __func__, 1);
     if (!pixs || pixGetDepth(pixs) != 8)
-        return ERROR_INT("pixs undefined or not 8 bpp", procName, 1);
+        return ERROR_INT("pixs undefined or not 8 bpp", __func__, 1);
     if (pixGetColormap(pixs))
-        return ERROR_INT("pixs is colormapped", procName, 1);
+        return ERROR_INT("pixs is colormapped", __func__, 1);
     if (sx < 5 || sy < 5)
-        return ERROR_INT("sx and/or sy less than 3", procName, 1);
+        return ERROR_INT("sx and/or sy less than 3", __func__, 1);
     if (smoothx < 0 || smoothy < 0)
-        return ERROR_INT("smooth params less than 0", procName, 1);
+        return ERROR_INT("smooth params less than 0", __func__, 1);
     if (smoothx > 5 || smoothy > 5)
-        return ERROR_INT("smooth params exceed 5", procName, 1);
+        return ERROR_INT("smooth params exceed 5", __func__, 1);
 
         /* Get the min and max values in each tile */
     pixmin1 = pixScaleGrayMinMax(pixs, sx, sy, L_CHOOSE_MIN);
@@ -2751,15 +2719,13 @@ pixSetLowContrast(PIX     *pixs1,
 l_int32    i, j, w, h, d, wpl, val1, val2, found;
 l_uint32  *data1, *data2, *line1, *line2;
 
-    PROCNAME("pixSetLowContrast");
-
     if (!pixs1 || !pixs2)
-        return ERROR_INT("pixs1 and pixs2 not both defined", procName, 1);
+        return ERROR_INT("pixs1 and pixs2 not both defined", __func__, 1);
     if (pixSizesEqual(pixs1, pixs2) == 0)
-        return ERROR_INT("pixs1 and pixs2 not equal size", procName, 1);
+        return ERROR_INT("pixs1 and pixs2 not equal size", __func__, 1);
     pixGetDimensions(pixs1, &w, &h, &d);
     if (d != 8)
-        return ERROR_INT("depth not 8 bpp", procName, 1);
+        return ERROR_INT("depth not 8 bpp", __func__, 1);
     if (mindiff > 254) return 0;
 
     data1 = pixGetData(pixs1);
@@ -2780,7 +2746,7 @@ l_uint32  *data1, *data2, *line1, *line2;
         if (found) break;
     }
     if (!found) {
-        L_WARNING("no pixel pair diffs as large as mindiff\n", procName);
+        L_WARNING("no pixel pair diffs as large as mindiff\n", __func__);
         pixClearAll(pixs1);
         pixClearAll(pixs2);
         return 1;
@@ -2840,24 +2806,21 @@ l_int32   *ia;
 l_int32  **iaa;
 l_uint32  *data, *datamin, *datamax, *line, *tline, *linemin, *linemax;
 
-    PROCNAME("pixLinearTRCTiled");
-
     if (!pixs || pixGetDepth(pixs) != 8)
-        return (PIX *)ERROR_PTR("pixs undefined or not 8 bpp", procName, pixd);
+        return (PIX *)ERROR_PTR("pixs undefined or not 8 bpp", __func__, pixd);
     if (pixd && pixd != pixs)
-        return (PIX *)ERROR_PTR("pixd not null or == pixs", procName, pixd);
+        return (PIX *)ERROR_PTR("pixd not null or == pixs", __func__, pixd);
     if (pixGetColormap(pixs))
-        return (PIX *)ERROR_PTR("pixs is colormapped", procName, pixd);
+        return (PIX *)ERROR_PTR("pixs is colormapped", __func__, pixd);
     if (!pixmin || !pixmax)
-        return (PIX *)ERROR_PTR("pixmin & pixmax not defined", procName, pixd);
+        return (PIX *)ERROR_PTR("pixmin & pixmax not defined", __func__, pixd);
     if (sx < 5 || sy < 5)
-        return (PIX *)ERROR_PTR("sx and/or sy less than 5", procName, pixd);
+        return (PIX *)ERROR_PTR("sx and/or sy less than 5", __func__, pixd);
 
-    if ((iaa = (l_int32 **)LEPT_CALLOC(256, sizeof(l_int32 *))) == NULL)
-        return (PIX *)ERROR_PTR("iaa not made", procName, NULL);
+    iaa = (l_int32 **)LEPT_CALLOC(256, sizeof(l_int32 *));
     if ((pixd = pixCopy(pixd, pixs)) == NULL) {
         LEPT_FREE(iaa);
-        return (PIX *)ERROR_PTR("pixd not made", procName, NULL);
+        return (PIX *)ERROR_PTR("pixd not made", __func__, NULL);
     }
     pixGetDimensions(pixd, &w, &h, NULL);
 
@@ -2878,11 +2841,11 @@ l_uint32  *data, *datamin, *datamax, *line, *tline, *linemin, *linemax;
             maxval = GET_DATA_BYTE(linemax, j);
             if (maxval == minval) {
                 L_ERROR("shouldn't happen! i,j = %d,%d, minval = %d\n",
-                        procName, i, j, minval);
+                        __func__, i, j, minval);
                 continue;
             }
             if ((ia = iaaGetLinearTRC(iaa, maxval - minval)) == NULL) {
-                L_ERROR("failure to make ia for j = %d!\n", procName, j);
+                L_ERROR("failure to make ia for j = %d!\n", __func__, j);
                 continue;
             }
             for (k = 0; k < sy && yoff + k < h; k++) {
@@ -2921,16 +2884,13 @@ l_int32    i;
 l_int32   *ia;
 l_float32  factor;
 
-    PROCNAME("iaaGetLinearTRC");
-
     if (!iaa)
-        return (l_int32 *)ERROR_PTR("iaa not defined", procName, NULL);
+        return (l_int32 *)ERROR_PTR("iaa not defined", __func__, NULL);
 
     if (iaa[diff] != NULL)  /* already have it */
        return iaa[diff];
 
-    if ((ia = (l_int32 *)LEPT_CALLOC(256, sizeof(l_int32))) == NULL)
-        return (l_int32 *)ERROR_PTR("ia not made", procName, NULL);
+    ia = (l_int32 *)LEPT_CALLOC(256, sizeof(l_int32));
     iaa[diff] = ia;
     if (diff == 0) {  /* shouldn't happen */
         for (i = 0; i < 256; i++)
@@ -2946,3 +2906,158 @@ l_float32  factor;
 
     return ia;
 }
+
+
+/*------------------------------------------------------------------*
+ *   Adaptive normalization with MinMax conversion of RGB to gray,  *
+ *   contrast enhancement and optional 2x upscale binarization      *
+ *------------------------------------------------------------------*/
+/*!
+ * \brief   pixBackgroundNormTo1MinMax()
+ *
+ * \param[in]    pixs          any depth, with or without colormap
+ * \param[in]    contrast      1 to 10: 1 reduces contrast; 10 is maximum
+ *                             enhancement
+ * \param[in]    scalefactor   1 (no change); 2 (2x upscale)
+ * \return  1 bpp pix if OK; NULL on error
+ *
+ * <pre>
+ * Notes:
+ *    (1) This is a convenience binarization function that does four things:
+ *        * Generates a grayscale image with color enhancement to gray
+ *        * Background normalization
+ *        * Optional contrast enhancement
+ *        * Binarizes either at input resolution or with 2x upscaling
+ *    (2) If the %pixs is 1 bpp, returns a copy.
+ *    (3) The contrast increasing parameter %contrast takes values {1, ... 10}.
+ *        For decent scans, contrast = 1 is recommended.  Use a larger
+ *        value if important details are lost in binarization.
+ *    (4) Valid values of %scalefactor are 1 and 2.
+ * </pre>
+ */
+PIX *
+pixBackgroundNormTo1MinMax(PIX     *pixs,
+                           l_int32  contrast,
+                           l_int32  scalefactor)
+{
+PIX  *pix1, *pix2, *pixd;
+
+    if (!pixs)
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
+    if (contrast < 1 || contrast > 10)
+        return (PIX *)ERROR_PTR("contrast not in [1 ... 10]", __func__, NULL);
+    if (scalefactor != 1 && scalefactor != 2)
+        return (PIX *)ERROR_PTR("scalefactor not 1 or 2", __func__, NULL);
+
+    if (pixGetDepth(pixs) == 1) {
+        pixd = pixCopy(NULL, pixs);
+    } else {
+        pix1 = pixConvertTo8MinMax(pixs);
+        pix2 = pixBackgroundNormSimple(pix1, NULL, NULL);
+        pixSelectiveContrastMod(pix2, contrast);
+        if (scalefactor == 1)
+            pixd = pixThresholdToBinary(pix2, 180);
+        else  /* scalefactor == 2 */
+            pixd = pixScaleGray2xLIThresh(pix2, 180);
+        pixDestroy(&pix1);
+        pixDestroy(&pix2);
+    }
+    return pixd;
+}
+
+
+/*!
+ * \brief   pixConvertTo8MinMax()
+ *
+ * \param[in]    pixs       any depth, with or without colormap
+ * \return  8 bpp pix if OK; NULL on error
+ *
+ * <pre>
+ * Notes:
+ *    (1) This is a special version of pixConvert1To8() that removes any
+ *        existing colormap and uses pixConvertRGBToGrayMinMax()
+ *        to strongly render color into black.
+ * </pre>
+ */
+PIX *
+pixConvertTo8MinMax(PIX  *pixs)
+{
+    if (!pixs)
+        return (PIX *)ERROR_PTR("pixs not defined", __func__, NULL);
+
+    l_int32 d = pixGetDepth(pixs);
+    if (d == 1) {
+        return pixConvert1To8(NULL, pixs, 255, 0);
+    } else if (d == 2) {
+        return pixConvert2To8(pixs, 0, 85, 170, 255, FALSE);
+    } else if (d == 4) {
+        return pixConvert4To8(pixs, FALSE);
+    } else if (d == 8) {
+        if (pixGetColormap(pixs) != NULL)
+            return pixRemoveColormap(pixs, REMOVE_CMAP_TO_GRAYSCALE);
+        else
+            return pixCopy(NULL, pixs);
+    } else if (d == 16) {
+        return pixConvert16To8(pixs, L_MS_BYTE);
+    } else if (d == 32) {
+        return pixConvertRGBToGrayMinMax(pixs, L_CHOOSE_MIN);
+    }
+
+    L_ERROR("Invalid depth d = %d\n", __func__, d);
+    return NULL;
+}
+
+
+/*!
+ * \brief   pixSelectiveContrastMod()
+ *
+ * \param[in]    pixs       8 bpp without colormap
+ * \param[in]    contrast   1 (default value) for some contrast reduction;
+ *                          10 for maximum contrast enhancement.
+ * \return  0 if OK, 1 on error
+ *
+ * <pre>
+ * Notes:
+ *    (1) This does in-place contrast enhancement on 8 bpp grayscale that
+ *        has been background normalized to 200.  Therefore, there should
+ *        be no gray pixels above 200 in %pixs.  For general contrast
+ *        enhancement on gray or color images, see pixContrastTRC().
+ *    (2) Caller restricts %contrast to [1 ... 10].
+ *    (3) Use %contrast = 1 for minimum contrast enhancement (which will
+ *        remove some speckle noise) and %contrast = 10 for maximum
+ *        darkening.
+ *    (4) We use 200 for the white point in all transforms.  Using a
+ *        white point above 200 will darken all grayscale pixels.
+ * </pre>
+ */
+static l_ok
+pixSelectiveContrastMod(PIX     *pixs,
+                        l_int32  contrast)
+{
+    if (!pixs || pixGetDepth(pixs) != 8)
+        return ERROR_INT("pixs not defined or not 8 bpp", __func__, 1);
+
+    if (contrast == 1)
+        pixGammaTRC(pixs, pixs, 2.0, 50, 200);
+    else if (contrast == 2)
+        pixGammaTRC(pixs, pixs, 1.8, 60, 200);
+    else if (contrast == 3)
+        pixGammaTRC(pixs, pixs, 1.6, 70, 200);
+    else if (contrast == 4)
+        pixGammaTRC(pixs, pixs, 1.4, 80, 200);
+    else if (contrast == 5)
+        pixGammaTRC(pixs, pixs, 1.2, 90, 200);
+    else if (contrast == 6)
+        pixGammaTRC(pixs, pixs, 1.0, 100, 200);
+    else if (contrast == 7)
+        pixGammaTRC(pixs, pixs, 0.85, 110, 200);
+    else if (contrast == 8)
+        pixGammaTRC(pixs, pixs, 0.7, 120, 200);
+    else if (contrast == 9)
+        pixGammaTRC(pixs, pixs, 0.6, 130, 200);
+    else  /* contrast == 10 */
+        pixGammaTRC(pixs, pixs, 0.5, 140, 200);
+
+    return 0;
+}
+

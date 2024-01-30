@@ -128,16 +128,14 @@ char         *testname, *vers;
 char          errormsg[64];
 L_REGPARAMS  *rp;
 
-    PROCNAME("regTestSetup");
-
     if (argc != 1 && argc != 2) {
         snprintf(errormsg, sizeof(errormsg),
             "Syntax: %s [ [compare] | generate | display ]", argv[0]);
-        return ERROR_INT(errormsg, procName, 1);
+        return ERROR_INT(errormsg, __func__, 1);
     }
 
     if ((testname = getRootNameFromArgv0(argv[0])) == NULL)
-        return ERROR_INT("invalid root", procName, 1);
+        return ERROR_INT("invalid root", __func__, 1);
 
     setLeptDebugOK(1);  /* required for testing */
 
@@ -160,7 +158,8 @@ L_REGPARAMS  *rp;
         rp->fp = fopenWriteStream(rp->tempfile, "wb");
         if (rp->fp == NULL) {
             rp->success = FALSE;
-            return ERROR_INT("stream not opened for tempfile", procName, 1);
+            return ERROR_INT_1("stream not opened for tempfile",
+                               rp->tempfile, __func__, 1);
         }
     } else if (!strcmp(argv[1], "generate")) {
         rp->mode = L_REG_GENERATE;
@@ -172,11 +171,11 @@ L_REGPARAMS  *rp;
         LEPT_FREE(rp);
         snprintf(errormsg, sizeof(errormsg),
             "Syntax: %s [ [generate] | compare | display ]", argv[0]);
-        return ERROR_INT(errormsg, procName, 1);
+        return ERROR_INT(errormsg, __func__, 1);
     }
 
         /* Print out test name and both the leptonica and
-         * image libarary versions */
+         * image library versions */
     lept_stderr("\n////////////////////////////////////////////////\n"
                 "////////////////   %s_reg   ///////////////\n"
                 "////////////////////////////////////////////////\n",
@@ -214,10 +213,8 @@ char    *text, *message;
 l_int32  retval;
 size_t   nbytes;
 
-    PROCNAME("regTestCleanup");
-
     if (!rp)
-        return ERROR_INT("rp not defined", procName, 1);
+        return ERROR_INT("rp not defined", __func__, 1);
 
     lept_stderr("Time: %7.3f sec\n", stopTimerNested(rp->tstart));
 
@@ -237,7 +234,7 @@ size_t   nbytes;
         rp->success = FALSE;
         LEPT_FREE(rp->testname);
         LEPT_FREE(rp);
-        return ERROR_INT("text not returned", procName, 1);
+        return ERROR_INT("text not returned", __func__, 1);
     }
 
         /* Prepare result message */
@@ -266,7 +263,8 @@ size_t   nbytes;
  * \param[in]    val1    typ. the golden value
  * \param[in]    val2    typ. the value computed
  * \param[in]    delta   allowed max absolute difference
- * \return  0 if OK, 1 on error a failure in comparison is not an error
+ * \return  0 if OK, 1 on error
+ *               Note: a failure in comparison is not an error
  */
 l_ok
 regTestCompareValues(L_REGPARAMS  *rp,
@@ -276,10 +274,8 @@ regTestCompareValues(L_REGPARAMS  *rp,
 {
 l_float32  diff;
 
-    PROCNAME("regTestCompareValues");
-
     if (!rp)
-        return ERROR_INT("rp not defined", procName, 1);
+        return ERROR_INT("rp not defined", __func__, 1);
 
     rp->index++;
     diff = L_ABS(val2 - val1);
@@ -309,7 +305,8 @@ l_float32  diff;
  * \param[in]    bytes1    size of string1
  * \param[in]    string2   typ. the computed string
  * \param[in]    bytes2    size of string2
- * \return  0 if OK, 1 on error a failure in comparison is not an error
+ * \return  0 if OK, 1 on error
+ *               Note: a failure in comparison is not an error
  */
 l_ok
 regTestCompareStrings(L_REGPARAMS  *rp,
@@ -321,10 +318,8 @@ regTestCompareStrings(L_REGPARAMS  *rp,
 l_int32  same;
 char     buf[256];
 
-    PROCNAME("regTestCompareStrings");
-
     if (!rp)
-        return ERROR_INT("rp not defined", procName, 1);
+        return ERROR_INT("rp not defined", __func__, 1);
 
     rp->index++;
     l_binaryCompare(string1, bytes1, string2, bytes2, &same);
@@ -359,7 +354,8 @@ char     buf[256];
  *
  * \param[in]    rp            regtest parameters
  * \param[in]    pix1, pix2    to be tested for equality
- * \return  0 if OK, 1 on error a failure in comparison is not an error
+ * \return  0 if OK, 1 on error
+ *               Note: a failure in comparison is not an error
  *
  * <pre>
  * Notes:
@@ -374,13 +370,11 @@ regTestComparePix(L_REGPARAMS  *rp,
 {
 l_int32  same;
 
-    PROCNAME("regTestComparePix");
-
     if (!rp)
-        return ERROR_INT("rp not defined", procName, 1);
+        return ERROR_INT("rp not defined", __func__, 1);
     if (!pix1 || !pix2) {
         rp->success = FALSE;
-        return ERROR_INT("pix1 and pix2 not both defined", procName, 1);
+        return ERROR_INT("pix1 and pix2 not both defined", __func__, 1);
     }
 
     rp->index++;
@@ -409,8 +403,8 @@ l_int32  same;
  * \param[in]    maxfract     maximum fraction of pixels allowed to have
  *                            diff greater than or equal to mindiff
  * \param[in]    printstats   use 1 to print normalized histogram to stderr
- * \return  0 if OK, 1 on error a failure in similarity comparison
- *              is not an error
+ * \return  0 if OK, 1 on error
+ *               Note: a failure in similarity comparison is not an error
  *
  * <pre>
  * Notes:
@@ -437,13 +431,11 @@ regTestCompareSimilarPix(L_REGPARAMS  *rp,
 {
 l_int32  w, h, factor, similar;
 
-    PROCNAME("regTestCompareSimilarPix");
-
     if (!rp)
-        return ERROR_INT("rp not defined", procName, 1);
+        return ERROR_INT("rp not defined", __func__, 1);
     if (!pix1 || !pix2) {
         rp->success = FALSE;
-        return ERROR_INT("pix1 and pix2 not both defined", procName, 1);
+        return ERROR_INT("pix1 and pix2 not both defined", __func__, 1);
     }
 
     rp->index++;
@@ -473,7 +465,8 @@ l_int32  w, h, factor, similar;
  *
  * \param[in]    rp         regtest parameters
  * \param[in]    localname  name of output file from reg test
- * \return  0 if OK, 1 on error a failure in comparison is not an error
+ * \return  0 if OK, 1 on error
+ *               Note: a failure in comparison is not an error
  *
  * <pre>
  * Notes:
@@ -502,18 +495,16 @@ char     namebuf[256];
 l_int32  ret, same, format;
 PIX     *pix1, *pix2;
 
-    PROCNAME("regTestCheckFile");
-
     if (!rp)
-        return ERROR_INT("rp not defined", procName, 1);
+        return ERROR_INT("rp not defined", __func__, 1);
     if (!localname) {
         rp->success = FALSE;
-        return ERROR_INT("local name not defined", procName, 1);
+        return ERROR_INT("local name not defined", __func__, 1);
     }
     if (rp->mode != L_REG_GENERATE && rp->mode != L_REG_COMPARE &&
         rp->mode != L_REG_DISPLAY) {
         rp->success = FALSE;
-        return ERROR_INT("invalid mode", procName, 1);
+        return ERROR_INT("invalid mode", __func__, 1);
     }
     rp->index++;
 
@@ -534,7 +525,7 @@ PIX     *pix1, *pix2;
         if (!ret) {
             char *local = genPathname(localname, NULL);
             char *golden = genPathname(namebuf, NULL);
-            L_INFO("Copy: %s to %s\n", procName, local, golden);
+            L_INFO("Copy: %s to %s\n", __func__, local, golden);
             LEPT_FREE(local);
             LEPT_FREE(golden);
         }
@@ -588,7 +579,8 @@ PIX     *pix1, *pix2;
  * \param[in]    rp        regtest parameters
  * \param[in]    index1    of one output file from reg test
  * \param[in]    index2    of another output file from reg test
- * \return  0 if OK, 1 on error a failure in comparison is not an error
+ * \return  0 if OK, 1 on error
+ *               Note: a failure in comparison is not an error
  *
  * <pre>
  * Notes:
@@ -610,17 +602,15 @@ char     namebuf[256];
 l_int32  same;
 SARRAY  *sa;
 
-    PROCNAME("regTestCompareFiles");
-
     if (!rp)
-        return ERROR_INT("rp not defined", procName, 1);
+        return ERROR_INT("rp not defined", __func__, 1);
     if (index1 < 0 || index2 < 0) {
         rp->success = FALSE;
-        return ERROR_INT("index1 and/or index2 is negative", procName, 1);
+        return ERROR_INT("index1 and/or index2 is negative", __func__, 1);
     }
     if (index1 == index2) {
         rp->success = FALSE;
-        return ERROR_INT("index1 must differ from index2", procName, 1);
+        return ERROR_INT("index1 must differ from index2", __func__, 1);
     }
 
     rp->index++;
@@ -632,7 +622,7 @@ SARRAY  *sa;
     if (sarrayGetCount(sa) != 1) {
         sarrayDestroy(&sa);
         rp->success = FALSE;
-        L_ERROR("golden file %s not found\n", procName, namebuf);
+        L_ERROR("golden file %s not found\n", __func__, namebuf);
         return 1;
     }
     name1 = sarrayGetString(sa, 0, L_COPY);
@@ -644,7 +634,7 @@ SARRAY  *sa;
         sarrayDestroy(&sa);
         rp->success = FALSE;
         LEPT_FREE(name1);
-        L_ERROR("golden file %s not found\n", procName, namebuf);
+        L_ERROR("golden file %s not found\n", __func__, namebuf);
         return 1;
     }
     name2 = sarrayGetString(sa, 0, L_COPY);
@@ -673,7 +663,8 @@ SARRAY  *sa;
  * \param[in]    rp       regtest parameters
  * \param[in]    pix      to be written
  * \param[in]    format   of output pix
- * \return  0 if OK, 1 on error a failure in comparison is not an error
+ * \return  0 if OK, 1 on error
+ *               Note: a failure in comparison is not an error
  *
  * <pre>
  * Notes:
@@ -699,17 +690,15 @@ regTestWritePixAndCheck(L_REGPARAMS  *rp,
 {
 char  namebuf[256];
 
-    PROCNAME("regTestWritePixAndCheck");
-
     if (!rp)
-        return ERROR_INT("rp not defined", procName, 1);
+        return ERROR_INT("rp not defined", __func__, 1);
     if (!pix) {
         rp->success = FALSE;
-        return ERROR_INT("pix not defined", procName, 1);
+        return ERROR_INT("pix not defined", __func__, 1);
     }
     if (format < 0 || format >= NumImageFileFormatExtensions) {
         rp->success = FALSE;
-        return ERROR_INT("invalid format", procName, 1);
+        return ERROR_INT("invalid format", __func__, 1);
     }
 
         /* Use bmp format for testing if library for requested
@@ -740,7 +729,8 @@ char  namebuf[256];
  * \param[in]    data    to be written
  * \param[in]    nbytes  of data to be written
  * \param[in]    ext     filename extension (e.g.: "ba", "pta")
- * \return  0 if OK, 1 on error a failure in comparison is not an error
+ * \return  0 if OK, 1 on error
+ *               Note: a failure in comparison is not an error
  *
  * <pre>
  * Notes:
@@ -770,13 +760,11 @@ regTestWriteDataAndCheck(L_REGPARAMS  *rp,
 {
 char  namebuf[256];
 
-    PROCNAME("regTestWriteDataAndCheck");
-
     if (!rp)
-        return ERROR_INT("rp not defined", procName, 1);
+        return ERROR_INT("rp not defined", __func__, 1);
     if (!data || nbytes == 0) {
         rp->success = FALSE;
-        return ERROR_INT("data not defined or size == 0", procName, 1);
+        return ERROR_INT("data not defined or size == 0", __func__, 1);
     }
 
         /* Generate the local file name */
@@ -821,10 +809,8 @@ regTestGenLocalFilename(L_REGPARAMS  *rp,
 char     buf[64];
 l_int32  ind;
 
-    PROCNAME("regTestGenLocalFilename");
-
     if (!rp)
-        return (char *)ERROR_PTR("rp not defined", procName, NULL);
+        return (char *)ERROR_PTR("rp not defined", __func__, NULL);
 
     ind = (index >= 0) ? index : rp->index;
     snprintf(buf, sizeof(buf), "/tmp/lept/regout/%s.%02d.%s",
@@ -855,12 +841,10 @@ getRootNameFromArgv0(const char  *argv0)
 l_int32  len;
 char    *root;
 
-    PROCNAME("getRootNameFromArgv0");
-
     splitPathAtDirectory(argv0, NULL, &root);
     if ((len = strlen(root)) <= 4) {
         LEPT_FREE(root);
-        return (char *)ERROR_PTR("invalid argv0; too small", procName, NULL);
+        return (char *)ERROR_PTR("invalid argv0; too small", __func__, NULL);
     }
 
 #ifndef _WIN32

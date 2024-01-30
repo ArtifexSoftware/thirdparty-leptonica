@@ -35,7 +35,7 @@
  *    in color.
  *
  *    The sels are then used to identify and remove the components
- *    in a page image in which thay are found.  We demonstrate
+ *    in a page image in which they are found.  We demonstrate
  *    the ability to find these components are reductions from 4 to 16x.
  *    (16x is extreme -- don't do this at home!)  The results are displayed
  *    with the matched pattern either highlighted or removed.
@@ -93,11 +93,9 @@ PIX     *pixc1, *pixc2, *pixc3, *pixd;
 PIXA    *pixa;
 SEL     *selhm;
 
-    PROCNAME("GeneratePattern");
-
     if ((pixs = pixRead(patname[patno])) == NULL) {
         rp->success = FALSE;
-        return ERROR_INT("pixs not made", procName, 1);
+        return ERROR_INT("pixs not made", __func__, 1);
     }
 
         /* Make a hit-miss sel at specified reduction factor */

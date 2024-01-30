@@ -19,7 +19,7 @@ void build(Solution &s)
         t += "org.sw.demo.webmproject.webp"_dep;
     };
 
-    auto &leptonica = s.addTarget<LibraryTarget>("danbloomberg.leptonica", "1.81.0");
+    auto &leptonica = s.addTarget<LibraryTarget>("danbloomberg.leptonica", "1.84.1");
     leptonica += Git("https://github.com/DanBloomberg/leptonica");
 
     {
@@ -173,6 +173,7 @@ void build(Solution &s)
             {"pageseg_reg", {"pageseg_reg.c"}},
             {"paintmask_reg", {"paintmask_reg.c"}},
             {"paint_reg", {"paint_reg.c"}},
+            {"partition_reg", {"partition_reg.c"}},
             {"pdfio1_reg", {"pdfio1_reg.c"}},
             {"pdfio2_reg", {"pdfio2_reg.c"}},
             {"pdfseg_reg", {"pdfseg_reg.c"}},
@@ -241,7 +242,7 @@ void build(Solution &s)
             {"comparepages", {"comparepages.c"}},
             {"comparepixa", {"comparepixa.c"}},
             {"comparetest", {"comparetest.c"}},
-            {"concatpdf", {"concatpdf.c"}},
+            {"compresspdf", {"compresspdf.c"}},
             {"contrasttest", {"contrasttest.c"}},
             {"convertfilestopdf", {"convertfilestopdf.c"}},
             {"convertfilestops", {"convertfilestops.c"}},
@@ -253,6 +254,7 @@ void build(Solution &s)
             {"converttops", {"converttops.c"}},
             {"cornertest", {"cornertest.c"}},
             {"corrupttest", {"corrupttest.c"}},
+            {"croppdf", {"croppdf.c"}},
             {"croptext", {"croptext.c"}},
             {"deskew_it", {"deskew_it.c"}},
             {"dewarprules", {"dewarprules.c"}},
@@ -280,8 +282,9 @@ void build(Solution &s)
             {"gammatest", {"gammatest.c"}},
             {"graphicstest", {"graphicstest.c"}},
             {"graymorphtest", {"graymorphtest.c"}},
-            {"histotest", {"histotest.c"}},
+            {"hashtest", {"hashtest.c"}},
             {"histoduptest", {"histoduptest.c"}},
+            {"histotest", {"histotest.c"}},
             {"htmlviewer", {"htmlviewer.c"}},
             {"imagetops", {"imagetops.c"}},
             {"jbcorrelation", {"jbcorrelation.c"}},
@@ -341,6 +344,7 @@ void build(Solution &s)
             {"rotatetest1", {"rotatetest1.c"}},
             {"runlengthtest", {"runlengthtest.c"}},
             {"scaleandtile", {"scaleandtile.c"}},
+            {"scaleimages", {"scaleimages.c"}},
             {"scale_it", {"scale_it.c"}},
             {"scaletest1", {"scaletest1.c"}},
             {"scaletest2", {"scaletest2.c"}},
@@ -353,6 +357,7 @@ void build(Solution &s)
             {"skewtest", {"skewtest.c"}},
             {"sorttest", {"sorttest.c"}},
             {"splitimage2pdf", {"splitimage2pdf.c"}},
+            {"splitpdf", {"splitpdf.c"}},
             {"sudokutest", {"sudokutest.c"}},
             {"textorient", {"textorient.c"}},
             {"tiffpdftest", {"tiffpdftest.c"}},
@@ -376,6 +381,7 @@ void check(Checker &c)
     auto &s = c.addSet("leptonica");
     s.checkFunctionExists("fmemopen");
     s.checkFunctionExists("fstatat");
+    s.checkFunctionExists("dirfd");
     s.checkIncludeExists("dlfcn.h");
     s.checkIncludeExists("inttypes.h");
     s.checkIncludeExists("memory.h");

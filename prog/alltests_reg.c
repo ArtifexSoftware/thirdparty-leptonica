@@ -145,12 +145,14 @@ static const char *tests[] = {
                               "multitype_reg",
                               "numa1_reg",
                               "numa2_reg",
+                              "numa3_reg",
                               "nearline_reg",
                               "newspaper_reg",
                               "overlap_reg",
                               "pageseg_reg",
                               "paint_reg",
                               "paintmask_reg",
+                              "partition_reg",
                               "pdfio1_reg",
                               "pdfio2_reg",
                               "pdfseg_reg",
@@ -213,15 +215,14 @@ static const char *header = {"\n=======================\n"
 int main(int    argc,
          char **argv)
 {
-char        *str, *results_file;
-char         command[256], buf[256];
-l_int32      i, ntests, dotest, nfail, ret, start, stop;
-SARRAY      *sa;
-static char  mainName[] = "alltests_reg";
+char    *str, *results_file;
+char     command[256], buf[256];
+l_int32  i, ntests, dotest, nfail, ret, start, stop;
+SARRAY  *sa;
 
     if (argc != 2)
         return ERROR_INT(" Syntax alltests_reg [generate | compare | display]",
-                         mainName, 1);
+                         __func__, 1);
 
     setLeptDebugOK(1);  /* required for testing */
     l_getCurrentTime(&start, NULL);

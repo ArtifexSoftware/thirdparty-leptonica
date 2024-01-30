@@ -144,6 +144,7 @@ ALL_LIBS =	$(LEPTLIB) -ltiff -ljpeg -lpng -lz -lm
 #ALL_LIBS =	$(LEPTLIB) -ltiff -ljpeg -lpng -lwebp -lopenjp2 -lz -lm
 #ALL_LIBS =	$(LEPTLIB) -ltiff -ljpeg -lpng -lwebp -lopenjp2 -lgif -lz -lm
 #ALL_LIBS =	$(LEPTLIB) -ltiff -ljpeg -lpng -lwebp -lwebpmux -lopenjp2 -lgif -lz -lm
+#ALL_LIBS =	$(LEPTLIB) -lm    #no external linked imaging libraries
 
 #########################################################################
 
@@ -186,7 +187,7 @@ SRC =		adaptmap_reg.c adaptnorm_reg.c affine_reg.c \
 		multitype_reg.c nearline_reg.c newspaper_reg.c \
 		numa1_reg.c numa2_reg.c numa3_reg.c \
 		overlap_reg.c pageseg_reg.c paint_reg.c paintmask_reg.c \
-		pdfio1_reg.c pdfio2_reg.c pdfseg_reg.c \
+		partition_reg.c pdfio1_reg.c pdfio2_reg.c pdfseg_reg.c \
 		pixa1_reg.c pixa2_reg.c \
 		pixadisp_reg.c pixalloc_reg.c \
 		pixcomp_reg.c pixmem_reg.c \
@@ -214,13 +215,13 @@ SRC =		adaptmap_reg.c adaptnorm_reg.c affine_reg.c \
 		ccbordtest.c cctest1.c \
 		cleanpdf.c colorsegtest.c comparepages.c \
 		comparepixa.c comparetest.c \
-		concatpdf.c contrasttest.c \
+		compresspdf.c contrasttest.c \
 		convertfilestopdf.c convertfilestops.c \
 		convertformat.c \
 		convertsegfilestopdf.c convertsegfilestops.c \
 		converttogray.c converttopdf.c converttops.c \
 		cornertest.c corrupttest.c \
-		croptext.c deskew_it.c \
+		croppdf.c croptext.c deskew_it.c \
 		dewarprules.c dewarptest1.c dewarptest2.c \
 		dewarptest3.c dewarptest4.c dewarptest5.c \
 		digitprep1.c displayboxa.c displayboxes_on_pixa.c \
@@ -231,7 +232,7 @@ SRC =		adaptmap_reg.c adaptnorm_reg.c affine_reg.c \
 		fmorphautogen.c \
 		fpixcontours.c gammatest.c \
 		graphicstest.c graymorphtest.c \
-		histoduptest.c histotest.c \
+		hashtest.c histoduptest.c histotest.c \
 		htmlviewer.c imagetops.c \
 		jbcorrelation.c jbrankhaus.c jbwords.c \
 		lightcolortest.c listtest.c \
@@ -252,11 +253,12 @@ SRC =		adaptmap_reg.c adaptnorm_reg.c affine_reg.c \
 		renderfonts.c replacebytes.c \
 		rotatefastalt.c rotate_it.c \
 		rotateorthtest1.c rotatetest1.c \
-		runlengthtest.c scaleandtile.c \
+		runlengthtest.c scaleandtile.c scaleimages.c \
 		scale_it.c scaletest1.c scaletest2.c \
 		seedfilltest.c settest.c sharptest.c \
 		sheartest.c showedges.c \
-		skewtest.c sorttest.c splitimage2pdf.c \
+		skewtest.c sorttest.c \
+		splitimage2pdf.c splitpdf.c \
 		sudokutest.c textorient.c \
 		tiffpdftest.c trctest.c \
 		underlinetest.c warpertest.c wordsinorder.c \
@@ -636,6 +638,9 @@ paint_reg:	paint_reg.o $(LEPTLIB)
 paintmask_reg:	paintmask_reg.o $(LEPTLIB)
 	$(CC) -o paintmask_reg paintmask_reg.o $(ALL_LIBS) $(EXTRALIBS)
 
+partition_reg:	partition_reg.o $(LEPTLIB)
+	$(CC) -o partition_reg partition_reg.o $(ALL_LIBS) $(EXTRALIBS)
+
 pdfio1_reg:	pdfio1_reg.o $(LEPTLIB)
 	$(CC) -o pdfio1_reg pdfio1_reg.o $(ALL_LIBS) $(EXTRALIBS)
 
@@ -846,8 +851,8 @@ comparepixa:	comparepixa.o $(LEPTLIB)
 comparetest:	comparetest.o $(LEPTLIB)
 	$(CC) -o comparetest comparetest.o $(ALL_LIBS) $(EXTRALIBS)
 
-concatpdf:	concatpdf.o $(LEPTLIB)
-	$(CC) -o concatpdf concatpdf.o $(ALL_LIBS) $(EXTRALIBS)
+compresspdf:	compresspdf.o $(LEPTLIB)
+	$(CC) -o compresspdf compresspdf.o $(ALL_LIBS) $(EXTRALIBS)
 
 contrasttest:	contrasttest.o $(LEPTLIB)
 	$(CC) -o contrasttest contrasttest.o $(ALL_LIBS) $(EXTRALIBS)
@@ -881,6 +886,9 @@ cornertest:	cornertest.o $(LEPTLIB)
 
 corrupttest:	corrupttest.o $(LEPTLIB)
 	$(CC) -o corrupttest corrupttest.o $(ALL_LIBS) $(EXTRALIBS)
+
+croppdf:	croppdf.o $(LEPTLIB)
+	$(CC) -o croppdf croppdf.o $(ALL_LIBS) $(EXTRALIBS)
 
 croptext:	croptext.o $(LEPTLIB)
 	$(CC) -o croptext croptext.o $(ALL_LIBS) $(EXTRALIBS)
@@ -962,6 +970,9 @@ graphicstest:	graphicstest.o $(LEPTLIB)
 
 graymorphtest:	graymorphtest.o $(LEPTLIB)
 	$(CC) -o graymorphtest graymorphtest.o $(ALL_LIBS) $(EXTRALIBS)
+
+hashtest:	hashtest.o $(LEPTLIB)
+	$(CC) -o hashtest hashtest.o $(ALL_LIBS) $(EXTRALIBS)
 
 histoduptest:	histoduptest.o $(LEPTLIB)
 	$(CC) -o histoduptest histoduptest.o $(ALL_LIBS) $(EXTRALIBS)
@@ -1140,6 +1151,9 @@ runlengthtest:	runlengthtest.o $(LEPTLIB)
 scaleandtile:	scaleandtile.o $(LEPTLIB)
 	$(CC) -o scaleandtile scaleandtile.o $(ALL_LIBS) $(EXTRALIBS)
 
+scaleimages:	scaleimages.o $(LEPTLIB)
+	$(CC) -o scaleimages scaleimages.o $(ALL_LIBS) $(EXTRALIBS)
+
 scale_it:	scale_it.o $(LEPTLIB)
 	$(CC) -o scale_it scale_it.o $(ALL_LIBS) $(EXTRALIBS)
 
@@ -1172,6 +1186,9 @@ sorttest:	sorttest.o $(LEPTLIB)
 
 splitimage2pdf:	splitimage2pdf.o $(LEPTLIB)
 	$(CC) -o splitimage2pdf splitimage2pdf.o $(ALL_LIBS) $(EXTRALIBS)
+
+splitpdf:	splitpdf.o $(LEPTLIB)
+	$(CC) -o splitpdf splitpdf.o $(ALL_LIBS) $(EXTRALIBS)
 
 sudokutest:	sudokutest.o $(LEPTLIB)
 	$(CC) -o sudokutest sudokutest.o $(ALL_LIBS) $(EXTRALIBS)

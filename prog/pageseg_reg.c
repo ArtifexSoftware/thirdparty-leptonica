@@ -27,7 +27,7 @@
 /*
  * pageseg_reg.c
  *
- *   This is a regresssion test for some of the page segmentation
+ *   This is a regression test for some of the page segmentation
  *   algorithms.  You can run some of these algorithms on any selected page
  *   image using prog/pagesegtest1.
  *   Tests are for:
@@ -233,5 +233,6 @@ L_REGPARAMS  *rp;
     pixDestroy(&pix2);
     pixDestroy(&pix3);
     pixDestroy(&pix4);
+    pixaDestroy(&pixadb);
     return regTestCleanup(rp);
 }
