@@ -110,6 +110,16 @@
  *  those with descenders ('g', p, q).  The letters 't' and 'g'
  *  will respond variably to the filter, depending on the type face.
  *
+ *  Note that for Cyrillic text, the ascender/descender signal is
+ *  opposite (more descenders than ascenders) and weaker (a smaller
+ *  expected ratio as a fraction of the total number of ascenders
+ *  and descenders).  Therefore, when used on Cyrillic text, the
+ *  decision of rightside-up or upside-down will be wrong and if any
+ *  interpretation is to be made, it should be interpreted oppositely.
+ *  For horizontal Cyrillic text, the left-right detector will work
+ *  correctly, giving very low confidence because no signal for
+ *  90/270 degree text was detected.
+ *
  *  What about the mirror image situations?  These aren't common
  *  unless you're dealing with film, for example.
  *  But you can reliably test if the image has undergone a
@@ -319,27 +329,22 @@ PIX       *pix1;
         L_INFO("text orientation not determined; no rotation\n", __func__);
         if (protation) *protation = 0;
         return pixCopy(NULL, pixs);
-        break;
     case L_TEXT_ORIENT_UP:
         L_INFO("text is oriented up; no rotation\n", __func__);
         if (protation) *protation = 0;
         return pixCopy(NULL, pixs);
-        break;
     case L_TEXT_ORIENT_LEFT:
         L_INFO("landscape; text oriented left; 90 cw rotation\n", __func__);
         if (protation) *protation = 90;
         return pixRotateOrth(pixs, 1);
-        break;
     case L_TEXT_ORIENT_DOWN:
         L_INFO("text oriented down; 180 cw rotation\n", __func__);
         if (protation) *protation = 180;
         return pixRotateOrth(pixs, 2);
-        break;
     case L_TEXT_ORIENT_RIGHT:
         L_INFO("landscape; text oriented right; 270 cw rotation\n", __func__);
         if (protation) *protation = 270;
         return pixRotateOrth(pixs, 3);
-        break;
     default:
         L_ERROR("invalid orient flag!\n", __func__);
         return pixCopy(NULL, pixs);

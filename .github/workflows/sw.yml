@@ -1,6 +1,19 @@
 name: sw
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - '**/CMakeLists.txt'
+      - '.github/*'
+  pull_request:
+    branches:
+      - master
+    paths-ignore:
+      - '**/CMakeLists.txt'
+      - '.github/*'
+  workflow_dispatch:
 
 jobs:
   windows:
@@ -37,5 +50,5 @@ jobs:
         export PATH="/opt/homebrew/opt/flex/bin:$PATH"
         export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
         export PATH="/opt/homebrew/opt/gcc/bin:$PATH"
-        ./sw build -static -shared -config d,r -compiler gcc-14
+        ./sw build -static -shared -config d,r -compiler gcc
         

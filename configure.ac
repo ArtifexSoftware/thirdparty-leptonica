@@ -1,5 +1,5 @@
 AC_PREREQ([2.69])
-AC_INIT([leptonica], [1.85.0])
+AC_INIT([leptonica], [1.87.0])
 AC_CONFIG_AUX_DIR([config])
 AC_CONFIG_HEADERS([config_auto.h:config/config.h.in])
 AC_CONFIG_SRCDIR([src/adaptmap.c])
@@ -267,8 +267,6 @@ AC_SUBST([VERSION_PATCH], [$(echo "$AX_POINT_VERSION" | $SED 's/^\([[0-9]][[0-9]
 INCLUDE_PATH=`eval echo $includedir`
 AC_SUBST([INCLUDE_DIR], ["${INCLUDE_PATH}/leptonica"])
 AC_SUBST([leptonica_OUTPUT_NAME], ["leptonica"])
-AC_CONFIG_FILES(cmake/templates/LeptonicaConfig.cmake)
-AC_CONFIG_FILES(cmake/templates/LeptonicaConfig-version.cmake)
 
 # Create symlink
 AC_PROG_LN_S

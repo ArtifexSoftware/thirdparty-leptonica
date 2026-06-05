@@ -77,7 +77,7 @@ This work is licensed under a <a rel="license" href="http://creativecommons.org/
 
 
 <h2 align=center>Version Notes for Leptonica</h2>
-<h3 align=center>3 Jan 2024</h3>
+<h3 align=center>18 Sept 2025</h3>
 
 <hr>
 <h2 align=center>  <IMG SRC="moller52.jpg" border=1 ALIGN_MIDDLE> </h2>
@@ -88,6 +88,22 @@ Note: The following are highlights of the changes in each version.
 They are <i>not</i> a complete listing of the modifications.
 
 <pre>
+
+1.87.0  Dec 24, 2025
+        * New distribution
+
+1.86.0  Sept 18, 2025
+        * Modify pixFindBaselines() to avoid joining textboxes and to
+          ignore bogus textboxes when listing baseline end points.
+        * Modify convertToPSEmbed() to efficiently encode webp input images.
+        * Modify compressFilesToPdf() to allow upscale interpolation for
+          low resolution pdfs.
+        * Fix innocuous indexing error in pixFillMapHoles().
+        * Source files changed: adaptmap.c, baseline.c, pageseg.c,
+          pdfapp.c, psio1.c
+        * Prog files changed: baseline_reg.c, binarizefiles.c,
+          compresspdf.c, croppdf.c, misctest2.c,
+        * Prog files added: baseline1.png, baseline2.tif, baseline3.tif
 
 1.85.0  Oct 16, 2024
         * Use wrapper callSystemDebug() instead of system() in programs.

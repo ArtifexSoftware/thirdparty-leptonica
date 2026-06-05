@@ -595,7 +595,10 @@ PIX     *pix1, *pix2, *pix3, *pixd;
  *      (6) Step (f) above helps with orthographically-produced music notation,
  *          where the horizontal staff lines can be very thin and thus
  *          subject to printer alias.
- *      (7) If you are not concerned with printing on paper, use the
+ *      (7) With orthographically-produced (as opposed to scanned) images,
+ *          there is no scan noise, so you should skip noise removal
+ *          by setting %edgeclean = 0.
+ *      (8) If you are not concerned with printing on paper, use the
  *          default value 0 for %printwiden.  Widening only takes place
  *          if the ratio h/w exceeds the specified paper size by 3%,
  *          and the horizontal scaling factor will not exceed 1.25.
@@ -831,7 +834,8 @@ PIX     *pix1;
  *
  * <pre>
  * Notes:
- *      (1) This extracts the page region from the image.  It is designed
+ *      (1) This extracts the page region from the image, returning a
+ *          bounding box for the remaining foreground pixels.  It is designed
  *          to work when the page is within a fairly solid black border.
  *      (2) It returns a bounding box for the page region at the input res.
  *      (3) The input %pixs is expected to be at a resolution 100 - 150 ppi.
@@ -843,10 +847,10 @@ static l_ok
 pixFindPageInsideBlackBorder(PIX   *pixs,
                              BOX  **pbox)
 {
-l_int32  empty;
-BOX     *box1;
+l_int32  empty, x, y;
+BOX     *box1, *box2, *box3;
 BOXA    *boxa1, *boxa2;
-PIX     *pix1, *pix2;
+PIX     *pix1, *pix2, *pix3;
 
     if (!pbox)
         return ERROR_INT("pbox not defined", __func__, 1);
@@ -871,10 +875,19 @@ PIX     *pix1, *pix2;
     boxa2 = boxaSort(boxa1, L_SORT_BY_AREA, L_SORT_DECREASING, NULL);
     box1 = boxaGetBox(boxa2, 0, L_COPY);  /* largest by area */
     boxAdjustSides(box1, box1, 5, -5, 5, -5);
-    *pbox = boxTransform(box1, 0, 0, 4.0, 4.0);
+    box2 = boxTransform(box1, 0, 0, 4.0, 4.0);
+
+        /* Crop this page from the original image and find the foreground */
+    pix3 = pixClipRectangle(pixs, box2, NULL);
+    pixClipToForeground(pix3, NULL, &box3);
+    pixDestroy(&pix3);
+    boxGetGeometry(box2, &x, &y, NULL, NULL);
+    *pbox = boxTransform(box3, x, y, 1.0, 1.0);
     boxaDestroy(&boxa1);
     boxaDestroy(&boxa2);
     boxDestroy(&box1);
+    boxDestroy(&box2);
+    boxDestroy(&box3);
     return 0;
 }
 
@@ -944,7 +957,7 @@ PIX            *pix1, *pixd;
     wmax = w - 2 * lr_border;
     hmax = h - 2 * tb_border;
     ratio = (l_float32)(wmax * hi) / (l_float32)(hmax * wi);
-    if (ratio >= 1) {  /* width can be widened after isotropic scaling */
+    if (ratio >= 1.0) {  /* width can be widened after isotropic scaling */
         scaleh = (l_float32)hmax / (l_float32)hi;
         wn = scaleh * wi;  /* scaled but not widened */
         scalewid = L_MIN(maxwiden, (l_float32)wmax / (l_float32)wn);

@@ -14,6 +14,11 @@ on:
       - 'configure.ac'
 
   push:
+    branches:
+      - master
+    paths-ignore:
+      - '**/CMakeLists.txt'
+      - '.github/*'
 
   # Trigger workflow in GitHub web frontend or from API.
   workflow_dispatch:
@@ -26,8 +31,8 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - { os: macos-12, cc: clang }
           - { os: macos-13, cc: clang }
+          - { os: macos-latest, cc: clang }
 
     steps:
     - uses: actions/checkout@v4
@@ -37,15 +42,9 @@ jobs:
            ${{ matrix.config.cc }} --version
            git log -3 --pretty=format:'%h %ad %s | %an'
 
-    - name: Clean Homebrew installation
-      run: |
-           brew uninstall aws-sam-cli azure-cli bazelisk
-           brew uninstall geckodriver firefox google-chrome microsoft-edge
-           brew info python3
-
     - name: Install dependencies
       run: |
-           brew install automake gnuplot || true
+           brew install automake gnuplot libtool || true
 
     - name: Setup Leptonica
       run: |
